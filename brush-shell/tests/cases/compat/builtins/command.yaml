@@ -257,6 +257,27 @@ cases:
       command -Vv echo
       command -V -v nonexistent; echo "rc=$?"
 
+  - name: "command options given more than once"
+    stdin: |
+      command -vv echo; echo "rc=$?"
+      command -v -v echo; echo "rc=$?"
+      command -pp echo hi; echo "rc=$?"
+      command -vV -v echo; echo "rc=$?"
+
+  - name: "command with an unknown option fails with status 2"
+    ignore_stderr: true
+    stdin: |
+      command -Z echo hi; echo "rc=$?"
+      command -v -Z echo; echo "rc=$?"
+      command --v echo; echo "rc=$?"
+
+  - name: "command passes options after the command name on"
+    stdin: |
+      command echo -v x
+      command printf '%s\n' -v
+      command -v echo -v; echo "rc=$?"
+      command -v -- echo; echo "rc=$?"
+
   - name: "command -V reports hashed commands"
     stdin: |
       # Normalize away the temporary directory the test runs in.
@@ -454,3 +475,9 @@ cases:
       echo "after source: $?"
       command trap "echo" BOGUS
       echo "after trap: $?"
+
+  - name: "command passes --help on to the builtin it runs"
+    stdin: |
+      command cd --help >/dev/null 2>&1; echo "rc=$?"
+      [[ "$(command cd --help; echo .)" == "$(help cd; echo .)" ]] && echo "same as help cd"
+

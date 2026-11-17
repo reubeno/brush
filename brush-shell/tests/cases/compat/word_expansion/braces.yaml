@@ -369,3 +369,8 @@ cases:
       printf '[%s]\n' x{1,2}
       arr=({a,b}c)
       echo "${#arr[@]}"
+
+  - name: "A parameter expansion with braces inside a brace expression"
+    known_failure: true # TODO(expansion): the `}` of `${u:-{1..2}}` is taken as the brace expression's; bash matches the parameter expansion's braces first
+    stdin: |
+      echo x{a,${u:-{1..2}}}y

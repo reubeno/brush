@@ -7,12 +7,12 @@ TokenizerResult(
   result: [
     Word("$!", SourceSpan(
       start: SourcePosition(
-        index: 0,
+        byte_offset: 0,
         line: 1,
         column: 1,
       ),
       end: SourcePosition(
-        index: 2,
+        byte_offset: 2,
         line: 1,
         column: 3,
       ),

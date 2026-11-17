@@ -239,7 +239,6 @@ cases:
     expected_stderr: ""
 
   - name: "Coprocess round trip"
-    known_failure_platforms: ["wasi"] # TODO(wasm): the coprocess hasn't run when the shell reads its reply, and a read on wasm can't wait for it
     stdin: |
       coproc { read -r line; echo "co:$line"; }
       echo ping >&"${COPROC[1]}"

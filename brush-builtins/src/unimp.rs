@@ -1,15 +1,19 @@
 use brush_core::{ExecutionExitCode, builtins, trace_categories};
 
-use clap::Parser;
-
 /// (UNIMPLEMENTED COMMAND)
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    unknown_flags = "value",
+    disable_help_short,
+    disable_version_flag,
+    disable_help_subcommand
+)]
 pub(crate) struct UnimplementedCommand {
-    #[clap(allow_hyphen_values = true)]
+    #[arg(positional, double_dash = "preserve")]
     args: Vec<String>,
 }
 
-brush_clap_adapter::impl_parse_args!(UnimplementedCommand);
+brush_winnow_args_adapter::impl_parse_args!(UnimplementedCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for UnimplementedCommand {
     type Error = brush_core::Error;

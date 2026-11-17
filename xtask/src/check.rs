@@ -5,7 +5,8 @@
 //! consistent error handling and verbose output.
 //!
 //! Some checks require additional tools to be installed:
-//! - `cargo-udeps`: Unused dependency detection (`cargo install cargo-udeps`, requires nightly)
+//! - `cargo-udeps`: Unused dependency detection (`cargo install cargo-udeps`, requires
+//!   nightly; `check unused-deps --toolchain <NAME>` picks which one, `nightly` by default)
 //! - `prek`: Runs everything defined in `.pre-commit-config.yaml` -- typos,
 //!   zizmor, lychee, cargo-deny, and the file hygiene hooks (`cargo binstall prek`)
 //!
@@ -46,7 +47,7 @@ pub enum CheckCommand {
     /// Check that generated schemas are up-to-date.
     Schemas,
     /// Check for unused dependencies (requires nightly).
-    UnusedDeps,
+    UnusedDeps(UnusedDepsArgs),
 }
 
 /// Options for the build check.
@@ -68,6 +69,15 @@ pub struct HooksArgs {
     hooks: Vec<String>,
 }
 
+/// Options for the unused dependency check.
+#[derive(Parser)]
+pub struct UnusedDepsArgs {
+    /// Nightly toolchain to run cargo-udeps with, as passed to `cargo +<NAME>`
+    /// (e.g. `nightly-2026-10-31`).
+    #[clap(long, value_name = "NAME", default_value = "nightly")]
+    toolchain: String,
+}
+
 /// Run a check command.
 pub fn run(cmd: &CheckCommand, verbose: bool) -> Result<()> {
     let sh = Shell::new()?;
@@ -75,7 +85,7 @@ pub fn run(cmd: &CheckCommand, verbose: bool) -> Result<()> {
     match cmd {
         CheckCommand::Fmt => check_fmt(&sh, verbose),
         CheckCommand::Lint => check_lint(&sh, verbose),
-        CheckCommand::UnusedDeps => check_unused_deps(&sh, verbose),
+        CheckCommand::UnusedDeps(args) => check_unused_deps(&sh, args, verbose),
         CheckCommand::Build(args) => check_build(&sh, args, verbose),
         CheckCommand::Crates => check_crates(&sh),
         CheckCommand::Schemas => check_schemas(&sh, verbose),
@@ -147,14 +157,15 @@ fn check_lint(sh: &Shell, verbose: bool) -> Result<()> {
     Ok(())
 }
 
-fn check_unused_deps(sh: &Shell, verbose: bool) -> Result<()> {
+fn check_unused_deps(sh: &Shell, args: &UnusedDepsArgs, verbose: bool) -> Result<()> {
     eprintln!("Checking for unused dependencies (requires nightly)...");
+    let toolchain = format!("+{}", args.toolchain);
     if verbose {
-        eprintln!("Running: cargo +nightly udeps --workspace --all-targets --all-features");
+        eprintln!("Running: cargo {toolchain} udeps --workspace --all-targets --all-features");
     }
     cmd!(
         sh,
-        "cargo +nightly udeps --workspace --all-targets --all-features"
+        "cargo {toolchain} udeps --workspace --all-targets --all-features"
     )
     .run()
     .context("Unused dependency check failed")?;

@@ -1,16 +1,20 @@
 use brush_core::ExecutionResult;
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::builtins;
 use brush_core::error;
 
 /// Enable, disable, or display built-in commands.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EnableCommand {
     /// Print a list of built-in commands.
     #[arg(short = 'a')]
     print_list: bool,
+
+    /// Remove the built-in commands loaded from the indicated object path.
+    #[arg(short = 'd')]
+    remove_loaded_builtin: bool,
 
     /// Disables the specified built-in commands.
     #[arg(short = 'n')]
@@ -28,15 +32,12 @@ pub(crate) struct EnableCommand {
     #[arg(short = 'f', value_name = "PATH")]
     shared_object_path: Option<String>,
 
-    /// Remove the built-in commands loaded from the indicated object path.
-    #[arg(short = 'd')]
-    remove_loaded_builtin: bool,
-
     /// Names of built-in commands to operate on.
+    #[arg(positional)]
     names: Vec<String>,
 }
 
-brush_clap_adapter::impl_parse_args!(EnableCommand);
+brush_winnow_args_adapter::impl_parse_args!(EnableCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EnableCommand {
     type Error = brush_core::Error;
@@ -65,14 +66,10 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EnableCommand {
             }
         } else {
             for (builtin_name, builtin) in context.shell.builtins().iter() {
-                if self.disable {
-                    if builtin.is_enabled() {
-                        continue;
-                    }
-                } else if self.print_list {
-                    if !builtin.is_enabled() {
-                        continue;
-                    }
+                // With -a, every builtin is listed. Otherwise -n lists just the disabled
+                // ones and the default (with or without -p) lists just the enabled ones.
+                if !self.print_list && builtin.is_enabled() == self.disable {
+                    continue;
                 }
 
                 if self.special_only && !builtin.is_special() {

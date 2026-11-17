@@ -65,6 +65,10 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     #[cfg_attr(feature = "serde", serde(skip, default = "default_process_launcher"))]
     process_launcher: SE::ProcessLauncher,
 
+    /// Injected task spawner.
+    #[cfg_attr(feature = "serde", serde(skip, default = "default_task_spawner"))]
+    task_spawner: SE::TaskSpawner,
+
     /// The builtins' state; see [`crate::ExecutionContext::state_mut`].
     #[cfg_attr(feature = "serde", serde(skip, default))]
     builtin_states: builtins::BuiltinStates,
@@ -108,6 +112,10 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
 
     /// Clone depth from the original ancestor shell.
     depth: usize,
+
+    /// The number the `\#` prompt escape shows: 1, plus one for each command the
+    /// interactive loop has run.
+    command_number: usize,
 
     /// Shell name
     name: Option<String>,
@@ -160,6 +168,7 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
         Self {
             error_formatter: self.error_formatter.clone(),
             process_launcher: self.process_launcher.clone(),
+            task_spawner: self.task_spawner.clone(),
             builtin_states: self.builtin_states.clone(),
             traps: self.traps.clone(),
             open_files: self.open_files.clone(),
@@ -197,6 +206,7 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
             key_bindings: self.key_bindings.clone(),
             history: self.history.clone(),
             depth: self.depth + 1,
+            command_number: self.command_number,
         }
     }
 }
@@ -228,6 +238,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         let mut shell = Self {
             error_formatter: options.error_formatter,
             process_launcher: options.process_launcher,
+            task_spawner: options.task_spawner,
             builtin_states: builtins::BuiltinStates::default(),
             open_files: openfiles::OpenFiles::new(),
             options: runtime_options,
@@ -276,13 +287,18 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
 
 impl<SE: extensions::ShellExtensions> Shell<SE> {
     /// Increments the interactive line offset in the shell by the indicated number
-    /// of lines.
+    /// of lines. The interactive loop calls this once after each command it runs, so
+    /// it also advances the command number that the `\#` prompt escape shows.
     ///
     /// # Arguments
     ///
     /// * `delta` - The number of lines to increment the current line offset by.
     pub fn increment_interactive_line_offset(&mut self, delta: usize) {
         self.call_stack.increment_current_line_offset(delta);
+        // shortcut: counts every line the loop runs, which bash doesn't for blank, comment-only
+        // or unparsable ones or for a bound key; count where the reader loop parses, once it's
+        // in core.
+        self.command_number += 1;
     }
 
     /// Updates the currently executing command in the shell.
@@ -379,6 +395,12 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         &self.process_launcher
     }
 
+    /// Returns the spawner that starts the tasks the shell runs concurrently with
+    /// itself.
+    pub const fn task_spawner(&self) -> &SE::TaskSpawner {
+        &self.task_spawner
+    }
+
     /// Checks if the given string is a keyword reserved in this shell.
     ///
     /// # Arguments
@@ -390,6 +412,10 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
 
     pub(crate) const fn last_exit_status_change_count(&self) -> usize {
         self.last_exit_status_change_count
+    }
+
+    pub(crate) const fn command_number(&self) -> usize {
+        self.command_number
     }
 }
 
@@ -609,6 +635,11 @@ fn default_error_formatter<EF: extensions::ErrorFormatter>() -> EF {
 #[cfg(feature = "serde")]
 fn default_process_launcher<PL: extensions::ProcessLauncher>() -> PL {
     PL::default()
+}
+
+#[cfg(feature = "serde")]
+fn default_task_spawner<TS: extensions::TaskSpawner>() -> TS {
+    TS::default()
 }
 
 #[cfg(test)]

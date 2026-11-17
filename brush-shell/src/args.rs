@@ -1,25 +1,11 @@
 //! Types for brush command-line parsing.
 
-use clap::{Parser, builder::styling};
 use std::io::IsTerminal;
 use std::path::PathBuf;
 
 use crate::{events, productinfo};
 
-const SHORT_DESCRIPTION: &str = "Bo[u]rn[e] RUsty SHell 🦀 (https://brush.sh)";
-
-const LONG_DESCRIPTION: &str = r"brush is a bash-compatible, Rust-implemented, POSIX-style shell.
-
-brush is distributed under the terms of the MIT license. If you encounter any issues or discrepancies in behavior from bash, please report them at https://github.com/reubeno/brush.
-
-For more information, visit https://brush.sh.";
-
-// The second usage form is indented to line up under the first, past clap's "Usage: " prefix.
-const USAGE: &str = color_print::cstr!(
-    "<bold>brush</bold> <italics>[OPTIONS]</italics>... <italics>[SCRIPT_PATH [SCRIPT_ARGS]...]</italics>\n       <bold>brush</bold> <italics>[OPTIONS]</italics>... -c <italics>COMMAND_STRING [NAME [ARGS]...]</italics>"
-);
-
-const VERSION: &str = const_format::concatcp!(
+pub(crate) const VERSION: &str = const_format::concatcp!(
     productinfo::PRODUCT_VERSION,
     " (",
     productinfo::PRODUCT_GIT_VERSION,
@@ -27,7 +13,8 @@ const VERSION: &str = const_format::concatcp!(
 );
 
 /// Identifies the input backend to use for the shell.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, winnow_args::ValueEnum)]
+#[arg(rename_all = "lowercase")]
 pub enum InputBackendType {
     /// Richest input backend, based on reedline. Not available on WASI or other
     /// wasm targets.
@@ -44,24 +31,27 @@ pub enum InputBackendType {
 }
 
 /// Parsed command-line arguments for the brush shell.
-#[derive(Clone, Parser)]
-#[clap(name = productinfo::PRODUCT_NAME,
-       version = VERSION,
-       about = SHORT_DESCRIPTION,
-       long_about = LONG_DESCRIPTION,
-       author,
-       override_usage = USAGE,
-       disable_help_flag = true,
-       disable_version_flag = true,
-       styles = brush_help_styles())]
-pub struct CommandLineArgs {
-    /// Display usage information.
-    #[arg(long = "help", action = clap::ArgAction::HelpShort)]
-    pub help: Option<bool>,
+#[derive(Clone, winnow_args::Args)]
+#[arg(
+    name = "brush",
+    about = "Bo[u]rn[e] RUsty SHell 🦀 (https://brush.sh)",
+    long_about = r"brush is a bash-compatible, Rust-implemented, POSIX-style shell.
 
+brush is distributed under the terms of the MIT license. If you encounter any issues or discrepancies in behavior from bash, please report them at https://github.com/reubeno/brush.
+
+For more information, visit https://brush.sh.",
+    usage = "brush [OPTIONS]... [SCRIPT_PATH [SCRIPT_ARGS]...]
+brush [OPTIONS]... -c COMMAND_STRING [NAME [ARGS]...]",
+    plus_options,
+    disable_help_short,
+    brief_help,
+    disable_version_flag,
+    disable_help_subcommand
+)]
+pub struct CommandLineArgs {
     /// Display shell version.
-    #[arg(long = "version", action = clap::ArgAction::Version)]
-    pub version: Option<bool>,
+    #[arg(long = "version")]
+    pub version: bool,
 
     /// Path to TOML-based `brush` config file (overrides default location).
     #[arg(
@@ -80,16 +70,15 @@ pub struct CommandLineArgs {
     pub disallow_overwriting_regular_files_via_output_redirection: bool,
 
     /// Execute the command given as the first operand and then exit.
-    ///
-    /// Only an input to parsing: `parse_shell_args` moves the command string into `command`,
-    /// which is what everything else consults.
+    // Only an input to parsing: `parse_shell_args` moves the command string into
+    // `command`, which is what everything else consults.
     #[arg(short = 'c', help_heading = "Standard shell options")]
     pub(crate) command_string_mode: bool,
 
     /// The command string to run, taken from the first operand when `-c` is
-    /// given. Not a clap argument itself (hence `skip`): bash parses options
-    /// first and only then takes the command from the first operand, so options
-    /// may sit between the two, as in `bash -c -l 'echo hi'`.
+    /// given. Not an argument itself (hence `skip`): bash parses options first
+    /// and only then takes the command from the first operand, so options may
+    /// sit between the two, as in `bash -c -l 'echo hi'`.
     #[arg(skip)]
     pub command: Option<String>,
 
@@ -148,9 +137,9 @@ pub struct CommandLineArgs {
 
     /// Disable option (`set -o` option).
     #[arg(
-        long = "+o",
+        plus = 'o',
         value_name = "OPTION",
-        hide = true,
+        hide,
         help_heading = "Standard shell options"
     )]
     pub disabled_options: Vec<String>,
@@ -165,9 +154,9 @@ pub struct CommandLineArgs {
 
     /// Disable `shopt` option.
     #[arg(
-        long = "+O",
+        plus = 'O',
         value_name = "SHOPT_OPTION",
-        hide = true,
+        hide,
         help_heading = "Standard shell options"
     )]
     pub disabled_shopt_options: Vec<String>,
@@ -229,8 +218,8 @@ pub struct CommandLineArgs {
     #[arg(long = "disable-color", help_heading = "User interface options")]
     pub disable_color: bool,
 
-    /// Enable syntax highlighting in input.
-    #[arg(long = "enable-highlighting", help_heading = "User interface options", default_value_t = crate::entry::DEFAULT_ENABLE_HIGHLIGHTING)]
+    /// Enable syntax highlighting in input (always on in `experimental` builds).
+    #[arg(long = "enable-highlighting", help_heading = "User interface options")]
     pub enable_highlighting: bool,
 
     /// Enable experimental parser (not ready for use).
@@ -287,22 +276,18 @@ pub struct CommandLineArgs {
         long = "disable-event",
         alias = "log-disable",
         value_name = "EVENT",
-        hide_possible_values = true,
+        hide_choices,
         help_heading = "User interface options"
     )]
     pub disabled_events: Vec<events::TraceEvent>,
 
     /// Path and arguments for script to execute (optional).
-    #[arg(
-        trailing_var_arg = true,
-        allow_hyphen_values = false,
-        value_name = "SCRIPT_PATH [SCRIPT_ARGS]..."
-    )]
+    #[arg(positional, stop_flags, value_name = "SCRIPT_PATH [SCRIPT_ARGS]...")]
     pub script_args: Vec<String>,
 }
 
 impl CommandLineArgs {
-    /// Returns a `CommandLineArgs` with all clap-defined default values.
+    /// Returns a `CommandLineArgs` with all of its declared default values.
     ///
     /// This is useful for detecting which CLI arguments were explicitly provided
     /// vs. which retained their default values (e.g., for config file merging).
@@ -360,20 +345,6 @@ impl CommandLineArgs {
     }
 }
 
-/// Returns clap styling to be used for command-line help.
-#[doc(hidden)]
-fn brush_help_styles() -> clap::builder::Styles {
-    styling::Styles::styled()
-        .header(
-            styling::AnsiColor::Yellow.on_default()
-                | styling::Effects::BOLD
-                | styling::Effects::UNDERLINE,
-        )
-        .usage(styling::AnsiColor::Green.on_default() | styling::Effects::BOLD)
-        .literal(styling::AnsiColor::Magenta.on_default() | styling::Effects::BOLD)
-        .placeholder(styling::AnsiColor::Cyan.on_default())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -415,9 +386,9 @@ mod tests {
         ];
 
         for (args, expected) in cases {
-            // NOTE: This deliberately goes through `parse_shell_args` and not
-            // `clap::Parser::try_parse_from`; only the former applies brush's `--` and `-c`
-            // handling, so only the former sees what the shell sees.
+            // NOTE: This deliberately goes through `parse_shell_args` and not the derived
+            // `parse_words`; only the former applies brush's `--` and `-c` handling, so only
+            // the former sees what the shell sees.
             let parsed = CommandLineArgs::parse_shell_args(
                 std::iter::once("brush")
                     .chain(args.iter().copied())
@@ -430,5 +401,66 @@ mod tests {
                 "for arguments: {args:?}"
             );
         }
+    }
+
+    /// `cargo xtask gen completion` writes the script from the command's name
+    /// alone, without linking brush.
+    #[test]
+    fn completion_scripts_need_only_the_name() {
+        use winnow_args::Args as _;
+        use winnow_args::complete::{Shell, script};
+        for &shell in Shell::ALL {
+            assert_eq!(
+                CommandLineArgs::completion_script(shell),
+                script("brush", shell),
+                "{shell:?}"
+            );
+        }
+    }
+
+    /// Each script asks brush itself for its answers.
+    #[test]
+    fn completion_scripts_call_back_into_brush() {
+        use winnow_args::Args as _;
+        use winnow_args::complete::Shell;
+        for &shell in Shell::ALL {
+            assert!(
+                CommandLineArgs::completion_script(shell).contains("brush __complete_word__"),
+                "{shell:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn help_lists_every_flag() {
+        use winnow_args::Args as _;
+        let data = CommandLineArgs::help_data();
+        let help = winnow_args::help::render(data, &[], false);
+        let flags: Vec<_> = data
+            .items
+            .iter()
+            .filter(|item| !item.hide && !item.positional)
+            .collect();
+        assert!(flags.len() > 30, "only {} flags", flags.len());
+        // Each flag starts a row of its own, as `-l, --login` or `--norc`.
+        let has_row = |names: &str| {
+            help.lines().any(|line| {
+                line.trim_start()
+                    .strip_prefix(names)
+                    .is_some_and(|rest| rest.is_empty() || rest.starts_with(' '))
+            })
+        };
+        for flag in flags {
+            let names: Vec<_> = [
+                flag.short.map(|short| format!("-{short}")),
+                flag.long.map(|long| format!("--{long}")),
+            ]
+            .into_iter()
+            .flatten()
+            .collect();
+            let names = names.join(", ");
+            assert!(has_row(&names), "no `{names}` row in:\n{help}");
+        }
+        assert!(has_row("--help"), "no `--help` row in:\n{help}");
     }
 }

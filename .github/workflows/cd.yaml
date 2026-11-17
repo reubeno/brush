@@ -61,7 +61,7 @@ jobs:
       attestations: write
 
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' || github.event_name == 'push' || (github.event_name == 'release' && github.repository_owner == 'reubeno' && startsWith(github.event.release.tag_name, 'brush-shell-v'))
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
 
     steps:
@@ -126,22 +126,22 @@ jobs:
             os: ubuntu-22.04
             force_dry_run: false
           - target: x86_64-apple-darwin
-            os: macos-15-intel
+            os: macos-26-intel
             force_dry_run: false
           - target: x86_64-pc-windows-msvc
             os: windows-2025
             force_dry_run: false
           - target: x86_64-unknown-linux-musl
-            os: ubuntu-22.04
+            os: ubuntu-26.04
             force_dry_run: false
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-22.04
             force_dry_run: false
           - target: aarch64-unknown-linux-musl
-            os: ubuntu-22.04
+            os: ubuntu-26.04
             force_dry_run: false
           - target: aarch64-apple-darwin
-            os: macos-14
+            os: macos-26
             force_dry_run: false
     timeout-minutes: 60
 
@@ -152,7 +152,7 @@ jobs:
           persist-credentials: false
 
       - name: "Install Rust toolchain"
-        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
         with:
           cache: false
           # The cross ARM64 musl linker wrapper emits shell traces as linker warnings.
@@ -167,7 +167,7 @@ jobs:
 
       - name: "Install musl cross tools"
         if: contains(matrix.target, '-musl')
-        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
         with:
           tool: cross
 
@@ -232,7 +232,7 @@ jobs:
       packages: write
 
     if: github.event_name == 'push' && github.repository == 'reubeno/brush'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
 
     steps:
@@ -244,7 +244,7 @@ jobs:
           merge-multiple: true
 
       - name: "Install ORAS"
-        uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
+        uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2.0.3
 
       - name: "Push to ghcr.io"
         env:
@@ -287,7 +287,7 @@ jobs:
     permissions:
       packages: write
 
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
 
     steps:

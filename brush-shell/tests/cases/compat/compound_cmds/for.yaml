@@ -140,7 +140,7 @@ cases:
         echo "Left inner loop"
       done
 
-  - name: "Multi-line for loop"
+  - name: "Multi-line for loop in a script"
     test_files:
       - path: "script.sh"
         contents: |
@@ -202,7 +202,7 @@ cases:
       echo "after loop: $?"
 
   - name: "break with a count of zero"
-    known_failure: true # TODO(loops): break 0 doesn't report "loop count out of range" and fail with 1
+    known_failure: true # TODO(loops): break 0 reports the count and fails with 1, but doesn't leave the loop
     ignore_stderr: true
     stdin: |
       for i in 1 2; do break 0; echo "body $i"; done
@@ -276,3 +276,19 @@ cases:
       echo "after: $?"
       f() { for k in 1 2; do continue 99; echo "in f $k"; done; echo "f end"; }
       for i in 1 2; do f; echo "loop $i"; done
+
+  - name: "break and continue take a count above 127"
+    known_failure: true # TODO(loops): the count is read as an 8-bit number, so 128 and up is a usage error and the loop goes on
+    ignore_stderr: true
+    stdin: |
+      nest() { s=$1; for n in {1..128}; do s="for i$n in 1; do $s; done"; done; }
+      nest 'break 128; echo "break went on"'; eval "$s"; echo "after break: $?"
+      nest 'continue 128; echo "continue went on"'; eval "$s"; echo "after continue: $?"
+
+  - name: "break and continue report a negative count and fail with status 1"
+    stdin: |
+      for i in 1; do break -1 2>err.txt; done; echo "break -1: $?"
+      [[ -s err.txt ]] && echo "break reported"
+      for i in 1; do continue -1 2>err.txt; done; echo "continue -1: $?"
+      [[ -s err.txt ]] && echo "continue reported"
+      rm err.txt

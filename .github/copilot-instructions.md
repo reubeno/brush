@@ -10,6 +10,10 @@
 
 **BEFORE making any changes, read `/AGENTS.md`.** It contains detailed architecture patterns, testing workflows, and development guidelines specific to this project. The information below supplements (not replaces) AGENTS.md.
 
+Before investigating or implementing, also read the canonical
+[independent-implementation and provenance policy](../CONTRIBUTING.md#independent-implementation-and-provenance)
+required by `AGENTS.md`. Apply it to delegated agents and their tools.
+
 ## Code Review Checklist
 
 When reviewing PRs, verify:

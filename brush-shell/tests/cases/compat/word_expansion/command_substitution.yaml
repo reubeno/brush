@@ -395,6 +395,12 @@ cases:
       touch x
       echo @(`case x in x) echo x;; esac`)
 
+  - name: "Large builtin output after a nested command substitution"
+    stdin: |
+      s=x; for i in {1..17}; do s=$s$s; done
+      for i in {1..20}; do v=$(echo "$(true)$s"); done
+      echo "${#v}"
+
   - name: "Function substitution"
     known_failure: true # TODO(expansion): #931: ${ cmd; } (bash 5.3) is not implemented
     stdin: |

@@ -8,11 +8,11 @@ use std::{fmt::Display, sync::Arc};
     derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
 )]
 pub struct SourcePosition {
-    /// The 0-based index of the character in the input stream.
-    pub index: usize,
+    /// The 0-based byte offset in the input stream.
+    pub byte_offset: usize,
     /// The 1-based line number.
     pub line: usize,
-    /// The 1-based column number.
+    /// The 1-based column number (character count within the line).
     pub column: usize,
 }
 
@@ -31,7 +31,7 @@ impl SourcePosition {
     #[must_use]
     pub const fn offset(&self, offset: &SourcePositionOffset) -> Self {
         Self {
-            index: self.index + offset.index,
+            byte_offset: self.byte_offset + offset.byte_offset,
             line: self.line + offset.line,
             column: if offset.line == 0 {
                 self.column + offset.column
@@ -46,7 +46,7 @@ impl SourcePosition {
 impl From<&SourcePosition> for miette::SourceOffset {
     #[allow(clippy::cast_sign_loss)]
     fn from(position: &SourcePosition) -> Self {
-        position.index.into()
+        position.byte_offset.into()
     }
 }
 
@@ -58,8 +58,8 @@ impl From<&SourcePosition> for miette::SourceOffset {
     derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
 )]
 pub struct SourcePositionOffset {
-    /// The 0-based character offset.
-    pub index: usize,
+    /// The 0-based byte offset.
+    pub byte_offset: usize,
     /// The 0-based line offset.
     pub line: usize,
     /// The 0-based column offset.
@@ -81,9 +81,9 @@ pub struct SourceSpan {
 }
 
 impl SourceSpan {
-    /// Returns the length of the token in characters.
-    pub fn length(&self) -> usize {
-        self.end.index - self.start.index
+    /// Returns the length of the span in bytes.
+    pub fn len_bytes(&self) -> usize {
+        self.end.byte_offset - self.start.byte_offset
     }
     pub(crate) fn within(start: &Self, end: &Self) -> Self {
         Self {

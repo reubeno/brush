@@ -65,6 +65,8 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     pub fn tilde_shorten(&self, s: String) -> String {
         if let Some(home_dir) = self.home_dir()
             && let Some(stripped) = s.strip_prefix(home_dir.to_string_lossy().as_ref())
+            // Home must match whole path components: /home/user is not a prefix of /home/users.
+            && (stripped.is_empty() || stripped.starts_with(std::path::is_separator))
         {
             return format!("~{stripped}");
         }

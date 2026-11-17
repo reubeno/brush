@@ -5,7 +5,18 @@ use std::fmt::Write as _;
 use brush_core::CommandArg;
 use brush_core::builtins::{ContentOptions, ContentType, Invocation, UsageError};
 use winnow_args::BStr;
+use winnow_args::color::{Ansi, Depth, Paint, Palette};
 use winnow_args::{Args, Error, ErrorKind, help};
+
+/// The colors of brush's help: yellow headings, magenta flags and cyan value
+/// names, with clap's colors for errors.
+pub const HELP_PALETTE: Palette = Palette {
+    header: Paint::ansi(Ansi::Yellow).bold().underline(),
+    flag: Paint::ansi(Ansi::Magenta).bold(),
+    command: Paint::ansi(Ansi::Magenta).bold(),
+    placeholder: Paint::ansi(Ansi::Cyan),
+    ..Palette::CLAP
+};
 
 /// Parses a builtin's arguments, each flattened to a word.
 ///
@@ -40,9 +51,11 @@ pub fn parse_with_double_dash<T: Args>(
 /// Parses a declaration utility's arguments: its options, and the rest as
 /// declarations, which it returns as they arrived.
 ///
-/// The options are the words that start with `-` or `+`, and aren't only
-/// that, up to the first word that doesn't or to `--`, which is dropped. No
-/// declaration utility's option takes its value as a separate word.
+/// The options are the words that start with `-` (or `+`, for a builtin
+/// that takes `+` options), and aren't only that, up to the first word that
+/// doesn't or to `--`, which is dropped. To any other builtin (`export`) a
+/// `+x` word is an operand, which it rejects as an invalid name, as a shell
+/// does. No declaration utility's option takes its value as a separate word.
 ///
 /// # Errors
 ///
@@ -52,10 +65,14 @@ pub fn parse_declarations<T: Args>(
 ) -> Result<(T, Vec<CommandArg>), UsageError> {
     let name = invocation.name();
     let mut args = invocation.into_args();
+    let takes_plus = T::HELP.items.iter().any(|item| item.plus.is_some());
     let end = args
         .iter()
         .position(|arg| match arg {
-            CommandArg::String(s) => s == "--" || !(s.len() > 1 && s.starts_with(['-', '+'])),
+            CommandArg::String(s) => {
+                s == "--"
+                    || !(s.len() > 1 && (s.starts_with('-') || (takes_plus && s.starts_with('+'))))
+            }
             CommandArg::Assignment(_) => true,
         })
         .unwrap_or(args.len());
@@ -93,8 +110,11 @@ fn parse_words<T: Args>(name: &str, words: &[String]) -> Result<T, UsageError> {
 /// A parse failure as the builtin reports it.
 ///
 /// That is `name: error: …` in winnow-args' words, then the usage line. A
-/// help or version request is [`UsageError::help`], with the help text,
-/// which the shell prints on standard output.
+/// help request is [`UsageError::help`], with the help of the subcommand it
+/// was made in: the short page for `-h` and the long one for `--help`, as
+/// clap's. The shell prints it on standard output. A bare invocation of an
+/// `arg_required_else_help` command is instead a plain usage error with that
+/// help. A version request is the top-level help.
 ///
 /// # Arguments
 ///
@@ -102,11 +122,19 @@ fn parse_words<T: Args>(name: &str, words: &[String]) -> Result<T, UsageError> {
 /// * `error` - The failure.
 pub fn to_usage_error<T: Args>(name: &str, error: &Error) -> UsageError {
     match error.kind() {
-        ErrorKind::HelpRequested | ErrorKind::VersionRequested => UsageError::help(
-            // `--help` is the long form, as clap's is.
-            help::render_styled(T::HELP, &[name], true, help::width(), help::Style::PLAIN)
-                .trim_end(),
-        ),
+        ErrorKind::HelpRequested | ErrorKind::VersionRequested => {
+            let text = error
+                .render_help_styled(name, help::Style::PLAIN)
+                .unwrap_or_else(|| {
+                    // Only a version request has no help page of its own.
+                    help::render_styled(T::HELP, &[name], true, help::width(), help::Style::PLAIN)
+                });
+            if error.is_bare_help() {
+                UsageError::new(text.trim_end())
+            } else {
+                UsageError::help(text.trim_end())
+            }
+        }
         _ => UsageError::new(format!(
             "{name}: error: {}\nusage: {}",
             error.message(help::Style::PLAIN),
@@ -128,7 +156,7 @@ pub fn content<T: Args>(
     Ok(match content_type {
         ContentType::DetailedHelp => {
             let style = if options.colorized {
-                help::Style::COLORED
+                help::Style::at(HELP_PALETTE, Depth::Ansi16)
             } else {
                 help::Style::PLAIN
             };
@@ -260,6 +288,28 @@ mod tests {
 
     crate::impl_parse_args!(HelpLike);
 
+    /// Subcommand-shaped: each subcommand has a help page of its own.
+    #[derive(Debug, winnow_args::Args)]
+    #[arg(arg_required_else_help)]
+    struct CtlLike {
+        #[arg(subcommand)]
+        command: CtlCommand,
+    }
+
+    #[derive(Debug, winnow_args::Subcommand)]
+    enum CtlCommand {
+        /// Show the status.
+        Status,
+        /// Enable a thing.
+        Enable {
+            /// The thing to enable.
+            #[arg(positional)]
+            thing: String,
+        },
+    }
+
+    crate::impl_parse_args!(CtlLike);
+
     fn words(parsed: Vec<CommandArg>) -> Vec<String> {
         into_words(parsed)
     }
@@ -287,6 +337,14 @@ mod tests {
         assert!(parsed.unexport);
         assert_eq!(ExportLike::DECLARATION_ROLE, DeclarationRole::Utility);
         assert_eq!(words(parsed.declarations), ["FOO", "-p"]);
+    }
+
+    #[test]
+    fn a_plus_word_is_an_operand_to_a_builtin_without_plus_options() {
+        let parsed =
+            <ExportLike as ParseArgs>::parse(Invocation::new("export", ["+n", "FOO"])).unwrap();
+        assert!(!parsed.unexport);
+        assert_eq!(words(parsed.declarations), ["+n", "FOO"]);
     }
 
     #[test]
@@ -327,6 +385,31 @@ mod tests {
     }
 
     #[test]
+    fn a_subcommand_and_its_arguments_parse() {
+        let parsed =
+            <CtlLike as ParseArgs>::parse(Invocation::new("ctl", ["enable", "x"])).unwrap();
+        assert!(matches!(parsed.command, CtlCommand::Enable { thing } if thing == "x"));
+    }
+
+    #[test]
+    fn a_help_request_in_a_subcommand_gives_its_help() {
+        let err = <CtlLike as ParseArgs>::parse(Invocation::new("ctl", ["enable", "--help"]))
+            .unwrap_err();
+        assert!(err.is_help(), "{err}");
+        assert!(err.to_string().contains("Usage: ctl enable "), "{err}");
+        assert!(err.to_string().contains("The thing to enable."), "{err}");
+        assert!(!err.to_string().contains("Show the status."), "{err}");
+    }
+
+    #[test]
+    fn a_bare_invocation_that_needs_more_is_an_error_with_the_help() {
+        let err =
+            <CtlLike as ParseArgs>::parse(Invocation::new("ctl", [] as [&str; 0])).unwrap_err();
+        assert!(!err.is_help(), "{err}");
+        assert!(err.to_string().contains("Show the status."), "{err}");
+    }
+
+    #[test]
     fn an_unknown_option_is_reported_with_the_usage_line() {
         let err = <HelpLike as ParseArgs>::parse(Invocation::new("cd", ["-x"])).unwrap_err();
         assert_eq!(
@@ -345,5 +428,14 @@ mod tests {
             description,
             "cd - Help-shaped: `--help` gives the help text.\n"
         );
+    }
+
+    #[test]
+    fn colorized_help_uses_brush_colors() {
+        let options = ContentOptions { colorized: true };
+        let help = HelpLike::content("cd", ContentType::DetailedHelp, &options).unwrap();
+        assert!(help.contains("\x1b[1;4;33mUsage:\x1b[0m"), "{help:?}");
+        assert!(help.contains("\x1b[1;35m-P\x1b[0m"), "{help:?}");
+        assert!(help.contains("\x1b[36mTARGET\x1b[0m"), "{help:?}");
     }
 }

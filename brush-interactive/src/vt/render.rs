@@ -526,7 +526,8 @@ mod tests {
 
     /// Returns a terminal `columns` wide to play what's drawn on.
     fn terminal(columns: usize) -> vt100::Parser {
-        vt100::Parser::new(24, u16::try_from(columns).unwrap(), 0)
+        let columns = std::num::NonZeroU16::new(u16::try_from(columns).unwrap()).unwrap();
+        vt100::Parser::new(vt100::Parser::DEFAULT_ROWS, columns, 0)
     }
 
     /// Plays `output` on `terminal`, translating newlines to CR LF, as terminals do
@@ -541,7 +542,7 @@ mod tests {
     fn shown(terminal: &vt100::Parser) -> (Vec<String>, (usize, usize)) {
         let screen = terminal.screen();
         let mut rows: Vec<String> = screen
-            .rows(0, screen.size().1)
+            .rows(0, screen.size().1.get())
             .map(|row| row.trim_end().to_owned())
             .collect();
         while rows.last().is_some_and(String::is_empty) {
@@ -638,8 +639,8 @@ mod tests {
         // The probe is the last thing written, so it's in the last cell in use.
         let screen = terminal.screen();
         let (rows, cols) = screen.size();
-        (0..rows)
-            .flat_map(|row| (0..cols).map(move |col| (row, col)))
+        (0..rows.get())
+            .flat_map(|row| (0..cols.get()).map(move |col| (row, col)))
             .rfind(|&(row, col)| {
                 screen
                     .cell(row, col)

@@ -65,7 +65,7 @@ fn redact_locations(value: &mut Value) {
         Value::Array(arr) => {
             // Check if this array looks like a tuple struct containing SourceSpan at the end
             // SourceSpan has: start: SourcePosition, end: SourcePosition
-            // SourcePosition has: index, line, column
+            // SourcePosition has: byte_offset, line, column
             if let Some(last) = arr.last() {
                 if is_source_span(last) {
                     arr.pop();
@@ -96,7 +96,7 @@ fn is_source_span(value: &Value) -> bool {
 fn normalize_source_span(value: &mut Value) {
     if let Value::Object(map) = value {
         let placeholder_pos = serde_json::json!({
-            "index": 0,
+            "byte_offset": 0,
             "line": 0,
             "column": 0
         });

@@ -1,21 +1,21 @@
-use clap::Parser;
-
 use brush_core::{ExecutionResult, builtins};
 
-/// Directly invokes a built-in, without going through typical search order.
-#[derive(Parser)]
+/// Execute SHELL-BUILTIN with arguments ARGs without performing command lookup.
+#[derive(Default, winnow_args::Args)]
+#[arg(
+    usage = "builtin [shell-builtin [arg ...]]",
+    disable_help_short,
+    disable_version_flag,
+    disable_help_subcommand
+)]
 pub(crate) struct BuiltinCommand {
-    #[clap(skip)]
+    // The builtin to run and its arguments, as they arrived. Skipped by winnow-args,
+    // and filled in by `impl_parse_args!`.
+    #[arg(skip)]
     args: Vec<brush_core::CommandArg>,
 }
 
-brush_clap_adapter::impl_parse_args!(
-    BuiltinCommand,
-    parse = |invocation: builtins::Invocation<'_>| Ok(Self {
-        args: invocation.into_args()
-    }),
-    declaration_utility
-);
+brush_winnow_args_adapter::impl_parse_args!(BuiltinCommand, declarations = args);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for BuiltinCommand {
     type Error = brush_core::Error;
