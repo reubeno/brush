@@ -413,9 +413,6 @@ cases:
       declare -f g
 
   - name: "Displaying a function with a quoted here-document delimiter"
-    known_failure: true # Issue #1580: brush-parser's Display writes the closing delimiter with its
-                        # quotes (`'EOF'`) and indents the body and delimiter, so the printed
-                        # function doesn't read back
     stdin: |
       f() {
         cat <<'EOF'
