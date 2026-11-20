@@ -563,6 +563,51 @@ impl ExpansionPiece {
     }
 }
 
+/// A piece of the expanded replacement in a `${parameter/pattern/string}` expansion.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum ReplacementPiece {
+    /// Text inserted as is.
+    Literal(String),
+    /// The text matched by the pattern (an unquoted `&` under `patsub_replacement`).
+    Match,
+}
+
+/// Splits an expanded replacement into literal text and references to the matched text.
+///
+/// In `s`, an `&` stands for the match, a backslash before `&` or another backslash makes
+/// that character literal, and any other backslash is kept as is. Text that was quoted in
+/// the replacement is expected to have had its `&` and `\` characters escaped already.
+fn parse_patsub_replacement(s: &str) -> Vec<ReplacementPiece> {
+    let mut pieces = vec![];
+    let mut literal = String::new();
+    let mut chars = s.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => match chars.peek() {
+                Some(&next @ ('\\' | '&')) => {
+                    literal.push(next);
+                    chars.next();
+                }
+                _ => literal.push(c),
+            },
+            '&' => {
+                if !literal.is_empty() {
+                    pieces.push(ReplacementPiece::Literal(std::mem::take(&mut literal)));
+                }
+                pieces.push(ReplacementPiece::Match);
+            }
+            _ => literal.push(c),
+        }
+    }
+
+    if !literal.is_empty() {
+        pieces.push(ReplacementPiece::Literal(literal));
+    }
+
+    pieces
+}
+
 enum ParameterState {
     Undefined,
     DefinedEmptyString,
@@ -859,16 +904,21 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     /// unaffected. Without this, e.g. `x=${arr[*]}` under `IFS=:` would yield
     /// `a b c` instead of bash's `a:b:c`.
     fn fields_to_string(&self, expansion: Expansion) -> String {
-        let joiner = if expansion.concatenate {
-            self.shell.ifs_joiner()
-        } else {
-            String::from(' ')
-        };
+        let joiner = self.fields_joiner(&expansion);
         expansion
             .fields
             .into_iter()
             .map(String::from)
             .join(joiner.as_str())
+    }
+
+    /// The separator [`Self::fields_to_string`] puts between an expansion's fields.
+    fn fields_joiner(&self, expansion: &Expansion) -> String {
+        if expansion.concatenate {
+            self.shell.ifs_joiner()
+        } else {
+            String::from(' ')
+        }
     }
 
     /// Expand a word that is part of a parameter expansion and is a word of its own
@@ -896,6 +946,58 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     ) -> Result<String, error::Error> {
         let expansion = self.expand_own_word(word, context).await?;
         Ok(self.fields_to_string(expansion))
+    }
+
+    /// Expand the replacement in a `${parameter/pattern/string}` expansion.
+    ///
+    /// With `patsub_replacement` on, an unquoted `&` in the expanded replacement stands for
+    /// the matched text, and a backslash makes a following `&` or backslash literal. This
+    /// applies to the results of unquoted expansions too, while quoted text, including
+    /// quoted expansions, is taken literally.
+    ///
+    /// The replacement is a word of its own (see [`Self::expand_own_word`]), so double
+    /// quotes around the whole parameter expansion don't quote it.
+    ///
+    /// # Arguments
+    ///
+    /// * `word` - The replacement to expand.
+    /// * `context` - The context of the parameter expansion the replacement is part of.
+    async fn expand_patsub_replacement(
+        &mut self,
+        word: &str,
+        context: WordContext,
+    ) -> Result<Vec<ReplacementPiece>, error::Error> {
+        let expansion = self.expand_own_word(word, context).await?;
+
+        if !self.shell.options().patsub_replacement {
+            return Ok(vec![ReplacementPiece::Literal(
+                self.fields_to_string(expansion),
+            )]);
+        }
+
+        // Escape `&` and `\` in quoted text so they come out of the parse as literals.
+        // Unquoted text, and the separator between fields, is passed through as is.
+        let joiner = self.fields_joiner(&expansion);
+        let mut escaped = String::new();
+        for (i, field) in expansion.fields.into_iter().enumerate() {
+            if i > 0 {
+                escaped.push_str(joiner.as_str());
+            }
+            for piece in field.0 {
+                if let ExpansionPiece::Unsplittable(s) = piece {
+                    for c in s.chars() {
+                        if matches!(c, '\\' | '&') {
+                            escaped.push('\\');
+                        }
+                        escaped.push(c);
+                    }
+                } else {
+                    escaped.push_str(String::from(piece).as_str());
+                }
+            }
+        }
+
+        Ok(parse_patsub_replacement(escaped.as_str()))
     }
 
     /// As [`Self::expand_own_word`], yielding a pattern if there is a word.
@@ -1928,8 +2030,9 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
 
                 // If no replacement was provided, then we replace with an empty string.
                 let replacement = replacement.unwrap_or(String::new());
-                let expanded_replacement =
-                    self.expand_own_word_to_str(&replacement, context).await?;
+                let expanded_replacement = self
+                    .expand_patsub_replacement(&replacement, context)
+                    .await?;
 
                 let regex = expanded_pattern.to_regex(
                     matches!(match_kind, brush_parser::word::SubstringMatchKind::Prefix),
@@ -1940,7 +2043,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                     Ok(Self::replace_substring(
                         s.as_str(),
                         &regex,
-                        expanded_replacement.as_str(),
+                        expanded_replacement.as_slice(),
                         &match_kind,
                     ))
                 })
@@ -2384,13 +2487,21 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     fn replace_substring(
         s: &str,
         regex: &fancy_regex::Regex,
-        replacement: &str,
+        replacement: &[ReplacementPiece],
         match_kind: &SubstringMatchKind,
     ) -> String {
-        // The replacement is already fully expanded; it must be inserted verbatim. A bare
+        // The replacement is already fully expanded; its text must be inserted verbatim. A bare
         // `&str` replacer would instead read `$1`, `$0` and `${name}` as references to the
         // regex's capture groups.
-        let replacement = fancy_regex::NoExpand(replacement);
+        let replacement = |caps: &fancy_regex::Captures<'_, str>| {
+            replacement
+                .iter()
+                .map(|piece| match piece {
+                    ReplacementPiece::Literal(s) => s.as_str(),
+                    ReplacementPiece::Match => &caps[0],
+                })
+                .collect::<String>()
+        };
 
         match match_kind {
             brush_parser::word::SubstringMatchKind::Prefix
@@ -2659,7 +2770,10 @@ mod tests {
         let regex = fancy_regex::Regex::new("(b)")?;
         let replace = |r: &str, kind: SubstringMatchKind| {
             WordExpander::<crate::extensions::DefaultShellExtensions>::replace_substring(
-                "abcb", &regex, r, &kind,
+                "abcb",
+                &regex,
+                &[ReplacementPiece::Literal(r.into())],
+                &kind,
             )
         };
 
@@ -2669,6 +2783,45 @@ mod tests {
             replace("${y}$$", SubstringMatchKind::Anywhere),
             "a${y}$$c${y}$$"
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_patsub_replacement() {
+        use ReplacementPiece::{Literal, Match};
+        let lit = |s: &str| Literal(s.into());
+
+        assert_eq!(parse_patsub_replacement(""), vec![]);
+        assert_eq!(parse_patsub_replacement("x"), vec![lit("x")]);
+        assert_eq!(
+            parse_patsub_replacement("<&>"),
+            vec![lit("<"), Match, lit(">")]
+        );
+        assert_eq!(parse_patsub_replacement("&&"), vec![Match, Match]);
+        assert_eq!(parse_patsub_replacement(r"\&"), vec![lit("&")]);
+        assert_eq!(parse_patsub_replacement(r"\\&"), vec![lit(r"\"), Match]);
+        assert_eq!(parse_patsub_replacement(r"\\\&"), vec![lit(r"\&")]);
+        assert_eq!(parse_patsub_replacement(r"\q\"), vec![lit(r"\q\")]);
+    }
+
+    #[test]
+    fn test_replace_substring_with_match_reference() -> Result<()> {
+        use ReplacementPiece::{Literal, Match};
+
+        let regex = fancy_regex::Regex::new("[ab]")?;
+        let replacement = [Literal("<".into()), Match, Literal(">".into())];
+        let replace = |kind: SubstringMatchKind| {
+            WordExpander::<crate::extensions::DefaultShellExtensions>::replace_substring(
+                "abc",
+                &regex,
+                &replacement,
+                &kind,
+            )
+        };
+
+        assert_eq!(replace(SubstringMatchKind::FirstOccurrence), "<a>bc");
+        assert_eq!(replace(SubstringMatchKind::Anywhere), "<a><b>c");
 
         Ok(())
     }
