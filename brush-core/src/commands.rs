@@ -820,8 +820,9 @@ pub(crate) async fn invoke_shell_function(
     // Leave the function: pop its frame and its local variables.
     drop(shell);
 
-    // Get the actual execution result from the body of the function.
-    let mut result = result?;
+    // Get the actual execution result from the body of the function. An error that
+    // escapes the body abandons the calling command too, so mark it as such.
+    let mut result = result.map_err(error::Error::into_from_function_body)?;
 
     // Handle control-flow.
     match result.next_control_flow {
