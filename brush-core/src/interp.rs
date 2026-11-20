@@ -694,14 +694,13 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::Command {
                         Ok(ExecutionSpawnResult::StartedTask(task.await))
                     }
                     commands::ShellForCommand::ParentShell(shell) => {
-                        let result = match compound.execute(shell, &params).await {
-                            Ok(result) => result,
+                        match compound.execute(shell, &params).await {
+                            Ok(result) => Ok(result.into()),
                             Err(err) => {
                                 let _ = shell.display_error(&mut params.stderr(shell), &err);
-                                err.into_result(shell)
+                                Err(err.into_reported())
                             }
-                        };
-                        Ok(result.into())
+                        }
                     }
                 }
             }

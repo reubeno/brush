@@ -239,7 +239,6 @@ cases:
       echo "after g: $?"
 
   - name: "A compound command's redirection applies to errors in it"
-    known_failure: true # TODO(errors): an error is reported after the redirections around it are undone
     stdin: |
       readonly r=1
       { r=2; } 2>/dev/null
