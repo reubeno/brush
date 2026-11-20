@@ -134,7 +134,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         }
 
         let source_info = crate::SourceInfo::from(path.to_owned());
-        let parse_result = self.parse(opened_file);
+        let parse_result = self.parse_for_execution(opened_file, &source_info, params);
 
         self.run_in_script_frame(call_type, &source_info, args, parse_result, params)
             .await
@@ -194,7 +194,14 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         source_info: &crate::SourceInfo,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        let parse_result = self.parse_string(command);
+        let command = command.into();
+        let parse_result = match self.parse_string(command.clone()) {
+            Err(brush_parser::ParseError::Tokenizing {
+                inner: brush_parser::TokenizerError::UnterminatedHereDocuments(..),
+                ..
+            }) => self.parse_for_execution(command.as_bytes(), source_info, params),
+            result => result,
+        };
         self.run_parsed_result(parse_result, source_info, params)
             .await
     }
