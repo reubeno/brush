@@ -5,6 +5,57 @@ use crate::assert_snapshot_redacted;
 use anyhow::Result;
 
 #[test]
+fn parse_eof_delimited_here_docs_with_warnings() {
+    for input in [
+        "cat <<EOF\nhello\n",
+        "cat <<EOF\n",
+        "cat <<EOF",
+        "cat <<-EOF\n\thello\n",
+        "cat <<'EOF'\nhello",
+        "cat <<A <<B\nhello\n",
+    ] {
+        let options = crate::ParserOptions::default();
+        let mut parser = crate::Parser::new(input.as_bytes(), &options);
+        assert!(parser.parse_program().is_err(), "{input:?}");
+        let mut parser = crate::Parser::new(input.as_bytes(), &options);
+        let mut warnings = vec![];
+        assert!(
+            parser.parse_program_with_warnings(&mut warnings).is_ok(),
+            "{input:?}"
+        );
+        assert_eq!(warnings.len(), if input.contains("<<A") { 2 } else { 1 });
+        assert!(warnings[0].contains("here-document at line 1 delimited by end-of-file"));
+    }
+}
+
+#[test]
+fn eof_here_doc_recovery_does_not_hide_other_errors() {
+    for input in [
+        "cat <<",
+        "cat << ",
+        "cat <<'EOF",
+        "if true; then cat <<EOF\nbody\n",
+    ] {
+        let mut parser = crate::Parser::new(input.as_bytes(), &crate::ParserOptions::default());
+        assert!(
+            parser.parse_program_with_warnings(&mut vec![]).is_err(),
+            "{input:?}"
+        );
+    }
+}
+
+#[test]
+fn complete_here_doc_does_not_warn() {
+    let mut parser = crate::Parser::new(
+        "cat <<EOF\nbody\nEOF\n".as_bytes(),
+        &crate::ParserOptions::default(),
+    );
+    let mut warnings = vec![];
+    assert!(parser.parse_program_with_warnings(&mut warnings).is_ok());
+    assert!(warnings.is_empty());
+}
+
+#[test]
 fn parse_here_doc_basic() -> Result<()> {
     let input = r"cat <<EOF
 content line 1
