@@ -32,6 +32,6 @@ pub use parser::{Parser, ParserBuilder, ParserImpl, ParserOptions, SourceInfo, p
 
 pub use source::{SourcePosition, SourcePositionOffset, SourceSpan};
 pub use tokenizer::{
-    Token, TokenLocation, TokenizerError, TokenizerOptions, tokenize_str,
+    Token, TokenLocation, TokenizerError, TokenizerOptions, single_quote_str, tokenize_str,
     tokenize_str_with_options, uncached_tokenize_str, unquote_str,
 };

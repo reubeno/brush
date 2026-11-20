@@ -398,31 +398,7 @@ fn backslash_escape<'a>(s: &'a str, options: &QuoteOptions) -> Cow<'a, str> {
 ///
 /// * `s` - The string to quote.
 pub fn single_quote(s: &str) -> Cow<'_, str> {
-    // Special-case the empty string and a lone single quote; both are rendered
-    // without any empty quoted runs.
-    match s {
-        "" => return Cow::Borrowed("''"),
-        "'" => return Cow::Borrowed(r"\'"),
-        _ => (),
-    }
-
-    let mut result = String::with_capacity(s.len() + 2);
-
-    // Go through the string; put everything in single quotes except for
-    // the single quote character itself. It will get escaped outside
-    // all quoting, with the quoted runs on either side of it kept even
-    // when they're empty.
-    for (i, part) in s.split('\'').enumerate() {
-        if i > 0 {
-            result.push_str(r"\'");
-        }
-
-        result.push('\'');
-        result.push_str(part);
-        result.push('\'');
-    }
-
-    Cow::Owned(result)
+    brush_parser::single_quote_str(s)
 }
 
 fn double_quote(s: &str) -> String {
