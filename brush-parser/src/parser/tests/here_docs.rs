@@ -47,12 +47,12 @@ fn eof_here_doc_recovery_does_not_hide_other_errors() {
 #[test]
 fn complete_here_doc_does_not_warn() {
     let mut parser = crate::Parser::new(
-        "cat <<EOF\nbody\nEOF\n".as_bytes(),
+        b"cat <<EOF\nbody\nEOF\n".as_slice(),
         &crate::ParserOptions::default(),
     );
     let mut warnings = vec![];
     assert!(parser.parse_program_with_warnings(&mut warnings).is_ok());
-    assert!(warnings.is_empty());
+    assert_eq!(warnings, [] as [String; 0]);
 }
 
 #[test]
