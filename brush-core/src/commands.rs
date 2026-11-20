@@ -8,6 +8,8 @@ use std::{
 
 use brush_parser::ast;
 
+mod capture;
+
 use crate::{
     ErrorKind, ExecutionControlFlow, ExecutionExitCode, ExecutionParameters, ExecutionResult,
     Shell, ShellFd, builtins, commands, env, error, escape,
@@ -843,6 +845,17 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
     params: &ExecutionParameters,
     s: String,
 ) -> Result<String, error::Error> {
+    // Recognize `$(< file)` before cloning the shell or changing its options.
+    // Bash expands its filename in the caller: `${file:=...}` must update the
+    // caller, and `<(producer)` must inherit its options and subshell depth.
+    let parse_result = shell.parse_string(s);
+
+    if let Ok(program) = &parse_result {
+        if let Some(redir) = try_unwrap_bare_input_redir_program(program) {
+            return invoke_input_redirection_substitution(shell, params, redir).await;
+        }
+    }
+
     // Instantiate a subshell to run the command in.
     let mut subshell = shell.clone();
 
@@ -867,7 +880,7 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
     // that thread must stay free to deliver readiness to the reader below.
     let cmd_join_handle = shell
         .task_spawner()
-        .spawn_blocking(run_substitution_command(subshell, params, s))
+        .spawn_blocking(run_substitution_command(subshell, params, parse_result))
         .await;
 
     let output_str = async_reader.read_to_string().await?;
@@ -887,30 +900,51 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
 
 async fn run_substitution_command(
     mut shell: Shell<impl extensions::ShellExtensions>,
-    mut params: ExecutionParameters,
-    command: String,
+    params: ExecutionParameters,
+    parse_result: Result<ast::Program, brush_parser::ParseError>,
 ) -> Result<ExecutionResult, error::Error> {
-    // Parse the string into a whole shell program.
-    let parse_result = shell.parse_string(command);
-
-    // Check for a command that is only an input redirection ("< file").
-    // If detected, emulate `cat file` to stdout and return immediately.
-    // If we failed to parse, then we'll fall below and handle it there.
-    if let Ok(program) = &parse_result {
-        if let Some(redir) = try_unwrap_bare_input_redir_program(program) {
-            interp::setup_redirect(&mut shell, &mut params, redir).await?;
-            std::io::copy(&mut params.stdin(&shell), &mut params.stdout(&shell))?;
-            return Ok(ExecutionResult::new(0));
-        }
-    }
-
-    // TODO(source-info): review this
     let source_info = crate::SourceInfo::from("main");
-
-    // Handle the parse result using default shell behavior.
     shell
         .run_parsed_result(parse_result, &source_info, &params)
         .await
+}
+
+async fn invoke_input_redirection_substitution(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    params: &ExecutionParameters,
+    redir: &ast::IoRedirect,
+) -> Result<String, error::Error> {
+    // `$(< file)` reads the file without running a command in another shell.
+    // Expand the filename using the caller's variables and options, but put the
+    // resulting stdin redirection in a copy so the caller's stdin stays unchanged.
+    let mut redirect_params = params.clone();
+    redirect_params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
+
+    if let Err(err) = interp::setup_redirect(shell, &mut redirect_params, redir).await {
+        // Expansion errors, such as an unset variable under `set -u`, still
+        // need the caller's normal error handling.
+        if !matches!(
+            err.kind(),
+            error::ErrorKind::RedirectionFailure(..) | error::ErrorKind::InvalidRedirection
+        ) {
+            return Err(err);
+        }
+
+        // A missing file or ambiguous filename gives an empty substitution
+        // with a failed status; it does not abort the surrounding command.
+        // Failure to print the diagnostic must not change that behavior.
+        if let Some(mut stderr) = params.try_stderr(shell) {
+            let _ = shell.display_error(&mut stderr, &err);
+        }
+        shell.set_last_exit_status(ExecutionExitCode::from(&err).into());
+        return Ok(String::new());
+    }
+
+    let input = redirect_params.stdin(shell);
+    let output = capture::collect_string_on_worker(input, shell.task_spawner()).await?;
+    // Only the read determines the status, not the process substitution's producer.
+    shell.set_last_exit_status(0);
+    Ok(output)
 }
 
 // Detects a subshell command that consists solely of a single input redirection
@@ -927,6 +961,10 @@ fn try_unwrap_bare_input_redir_program(program: &ast::Program) -> Option<&ast::I
         return None;
     };
 
+    if matches!(item.1, ast::SeparatorOperator::Async) {
+        return None;
+    }
+
     // ...with a single pipeline (no && or || chaining)...
     let and_or = &item.0;
     if !and_or.additional.is_empty() {
@@ -935,7 +973,7 @@ fn try_unwrap_bare_input_redir_program(program: &ast::Program) -> Option<&ast::I
 
     // ...not negated...
     let pipeline = &and_or.first;
-    if pipeline.bang {
+    if pipeline.bang || pipeline.timed.is_some() {
         return None;
     }
 
@@ -955,12 +993,14 @@ fn try_unwrap_bare_input_redir_program(program: &ast::Program) -> Option<&ast::I
         return None;
     };
 
-    // ...that is a file input redirection to a filename, targeting stdin.
+    // ...that is an input redirection to a filename or readable process substitution,
+    // targeting stdin.
     match redir {
         ast::IoRedirect::File(
             fd,
             ast::IoFileRedirectKind::Read,
-            ast::IoFileRedirectTarget::Filename(..),
+            ast::IoFileRedirectTarget::Filename(..)
+            | ast::IoFileRedirectTarget::ProcessSubstitution(ast::ProcessSubstitutionKind::Read, _),
         ) if fd.is_none_or(|fd| fd == openfiles::OpenFiles::STDIN_FD) => Some(redir),
         _ => None,
     }

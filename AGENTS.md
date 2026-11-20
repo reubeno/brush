@@ -24,6 +24,16 @@ what `brush-core` owns vs. the interactive front end). Read it before adding a c
 moving code between crates, or changing a public API's shape, and keep it up to date when
 the architecture changes.
 
+### Semantic Ownership
+
+Before changing behavior, identify the semantic concepts involved, their invariants and
+lifetimes, and the layer responsible for each. Represent each invariant at its owning
+abstraction, and have callers use that representation rather than reconstructing it with
+local flags, depth adjustments, duplicated state, or exceptions. Repeated special cases
+can signal that ownership or the representation is wrong. Validate the abstraction against
+real behavior across its relevant execution paths and runtime constraints, not just the
+triggering example.
+
 ### Key Files & Entry Points
 
 **Critical files to understand first:**
