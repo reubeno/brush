@@ -93,7 +93,7 @@ fn format_prompt_piece(
             basename,
         } => format_current_working_directory(shell, tilde_replaced, basename),
         brush_parser::prompt::PromptPiece::Date(format) => {
-            format_date(&chrono::Local::now(), &format)
+            format_date(&crate::timing::to_local(jiff::Timestamp::now()), &format)
         }
         brush_parser::prompt::PromptPiece::DollarOrPound => {
             if users::is_root() {
@@ -161,7 +161,7 @@ fn format_prompt_piece(
                 .unwrap_or_default()
         }
         brush_parser::prompt::PromptPiece::Time(time_fmt) => {
-            format_time(&chrono::Local::now(), &time_fmt)
+            format_time(&crate::timing::to_local(jiff::Timestamp::now()), &time_fmt)
         }
     };
 
@@ -191,39 +191,24 @@ fn format_current_working_directory(
     working_dir_str
 }
 
-fn format_time<Tz: chrono::TimeZone>(
-    datetime: &chrono::DateTime<Tz>,
-    format: &brush_parser::prompt::PromptTimeFormat,
-) -> String
-where
-    Tz::Offset: std::fmt::Display,
-{
-    let formatted = match format {
-        brush_parser::prompt::PromptTimeFormat::TwelveHourAM => datetime.format("%I:%M %p"),
-        brush_parser::prompt::PromptTimeFormat::TwelveHourHHMMSS => datetime.format("%I:%M:%S"),
-        brush_parser::prompt::PromptTimeFormat::TwentyFourHourHHMM => datetime.format("%H:%M"),
-        brush_parser::prompt::PromptTimeFormat::TwentyFourHourHHMMSS => datetime.format("%H:%M:%S"),
+fn format_time(datetime: &jiff::Zoned, format: &brush_parser::prompt::PromptTimeFormat) -> String {
+    let fmt = match format {
+        brush_parser::prompt::PromptTimeFormat::TwelveHourAM => "%I:%M %p",
+        brush_parser::prompt::PromptTimeFormat::TwelveHourHHMMSS => "%I:%M:%S",
+        brush_parser::prompt::PromptTimeFormat::TwentyFourHourHHMM => "%H:%M",
+        brush_parser::prompt::PromptTimeFormat::TwentyFourHourHHMMSS => "%H:%M:%S",
     };
 
-    formatted.to_string()
+    crate::timing::strftime(datetime, fmt)
 }
 
-fn format_date<Tz: chrono::TimeZone>(
-    datetime: &chrono::DateTime<Tz>,
-    format: &brush_parser::prompt::PromptDateFormat,
-) -> String
-where
-    Tz::Offset: std::fmt::Display,
-{
-    match format {
-        brush_parser::prompt::PromptDateFormat::WeekdayMonthDate => {
-            datetime.format("%a %b %d").to_string()
-        }
-        brush_parser::prompt::PromptDateFormat::Custom(fmt) => {
-            let fmt_items = chrono::format::StrftimeItems::new(fmt);
-            datetime.format_with_items(fmt_items).to_string()
-        }
-    }
+fn format_date(datetime: &jiff::Zoned, format: &brush_parser::prompt::PromptDateFormat) -> String {
+    let fmt = match format {
+        brush_parser::prompt::PromptDateFormat::WeekdayMonthDate => "%a %b %d",
+        brush_parser::prompt::PromptDateFormat::Custom(fmt) => fmt.as_str(),
+    };
+
+    crate::timing::strftime(datetime, fmt)
 }
 
 #[cfg(test)]
@@ -233,7 +218,9 @@ mod tests {
     #[test]
     fn test_format_time() {
         // Create a well-known test date/time.
-        let dt = chrono::DateTime::parse_from_rfc3339("2024-12-25T13:34:56.789Z").unwrap();
+        let dt = "2024-12-25T13:34:56.789Z[UTC]"
+            .parse::<jiff::Zoned>()
+            .unwrap();
 
         assert_eq!(
             format_time(&dt, &brush_parser::prompt::PromptTimeFormat::TwelveHourAM),
@@ -260,7 +247,9 @@ mod tests {
     #[test]
     fn test_format_date() {
         // Create a well-known test date/time.
-        let dt = chrono::DateTime::parse_from_rfc3339("2024-12-25T12:34:56.789Z").unwrap();
+        let dt = "2024-12-25T12:34:56.789Z[UTC]"
+            .parse::<jiff::Zoned>()
+            .unwrap();
 
         assert_eq!(
             format_date(
@@ -285,7 +274,7 @@ mod tests {
                     "%Y-%m-%d %H:%M:%S.%f"
                 ))
             ),
-            "2024-12-25 12:34:56.789000000"
+            "2024-12-25 12:34:56.789"
         );
     }
 }

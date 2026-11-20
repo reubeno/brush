@@ -18,7 +18,7 @@ workspace = true
 
 [features]
 default = []
-serde = ["dep:serde", "brush-parser/serde", "rpds/serde", "chrono/serde"]
+serde = ["dep:serde", "brush-parser/serde", "rpds/serde", "jiff/serde"]
 experimental-parser = ["brush-parser/winnow-parser"]
 
 [dependencies]
@@ -28,7 +28,7 @@ brush-parser = { version = "^0.4.0", path = "../brush-parser" }
 bon = "3.9.1"
 cached = "2.0.2"
 cfg-if = "1.0.4"
-chrono = "0.4.44"
+jiff = "0.2.43"
 color-print = "0.3.7"
 fancy-regex = "0.20.0"
 futures = "0.3.32"
@@ -81,6 +81,7 @@ uzers = "0.12.2"
 
 [target.wasm32-unknown-unknown.dependencies]
 getrandom = { version = "0.4.2", features = ["wasm_js"] }
+jiff = { version = "0.2.43", features = ["js"] }
 uuid = { version = "1", features = ["js"] }
 
 [dev-dependencies]

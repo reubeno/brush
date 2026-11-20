@@ -392,7 +392,6 @@ dependencies = [
  "brush-parser",
  "brush-winnow-args-adapter",
  "cfg-if",
- "chrono",
  "fancy-regex 0.20.2",
  "itertools 0.15.0",
  "nix 0.31.3",
@@ -440,7 +439,6 @@ dependencies = [
  "cached",
  "cfg-if",
  "check_elevation",
- "chrono",
  "color-print",
  "command-fds",
  "fancy-regex 0.20.2",
@@ -449,6 +447,7 @@ dependencies = [
  "hostname",
  "inherent",
  "itertools 0.15.0",
+ "jiff",
  "libc",
  "nix 0.31.3",
  "normalize-path",
@@ -846,10 +845,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327"
 dependencies = [
  "iana-time-zone",
- "js-sys",
  "num-traits",
- "serde",
- "wasm-bindgen",
  "windows-link",
 ]
 
@@ -2456,10 +2452,12 @@ dependencies = [
  "jiff-core",
  "jiff-static",
  "jiff-tzdb-platform",
+ "js-sys",
  "log",
  "portable-atomic",
  "portable-atomic-util",
  "serde_core",
+ "wasm-bindgen",
  "windows-link",
 ]
 
@@ -3578,14 +3576,15 @@ dependencies = [
 
 [[package]]
 name = "reedline"
-version = "0.52.1"
+version = "0.53.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc0282eb061a7d039435f10075f22988e0dd7468901ee247a803021786afc662"
+checksum = "9b061d8059603bc95c569166a79ca60c01ccc8f8b6065035aed66a3753fdb06c"
 dependencies = [
- "chrono",
  "crossterm",
+ "crossterm_winapi",
  "fd-lock",
  "nu-ansi-term",
+ "rustix",
  "serde",
  "strip-ansi-escapes",
  "strum",

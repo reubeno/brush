@@ -26,19 +26,6 @@ impl<SE: brush_core::ShellExtensions> reedline::History for ReedlineHistory<SE> 
         // in a non-reedline-specific way.
         //
 
-        // let brush_item = reedline_history_item_to_brush(&item);
-        // let mut shell = self.lock_shell();
-        // let history = get_shell_history_mut(&mut shell)?;
-        //
-        // if let Some(id) = &item.id {
-        //     history
-        //         .update_by_id(id.0, brush_item)
-        //         .map_err(brush_error_to_reedline)?;
-        // } else {
-        //     let id = history.add(brush_item).map_err(brush_error_to_reedline)?;
-        //     item.id = Some(reedline::HistoryItemId(id));
-        // }
-
         Ok(item)
     }
 
@@ -160,20 +147,10 @@ impl<SE: brush_core::ShellExtensions> reedline::History for ReedlineHistory<SE> 
 fn brush_history_item_to_reedline(item: &brush_core::history::Item) -> reedline::HistoryItem {
     let mut rl_item = reedline::HistoryItem::from_command_line(item.command_line.as_str());
     rl_item.id = Some(reedline::HistoryItemId(item.id));
-    rl_item.start_timestamp = item.timestamp;
+    // `start_timestamp` is left unset: nothing reads it with this history (only reedline's
+    // sqlite backend does), and the item's timestamp stays available through brush's history.
 
     rl_item
-}
-
-#[expect(unused)]
-fn reedline_history_item_to_brush(item: &reedline::HistoryItem) -> brush_core::history::Item {
-    // TODO(history): implement more fields when they are added to Item
-    brush_core::history::Item {
-        id: item.id.map_or(0, |id| id.0),
-        command_line: item.command_line.clone(),
-        timestamp: item.start_timestamp,
-        dirty: true,
-    }
 }
 
 fn brush_error_to_reedline(error: brush_core::Error) -> reedline::ReedlineError {
@@ -199,16 +176,6 @@ fn reedline_history_query_into_brush(
         } else {
             query.end_id.map(|id| id.0)
         },
-        not_at_or_before_time: if matches!(query.direction, reedline::SearchDirection::Backward) {
-            query.end_time
-        } else {
-            query.start_time
-        },
-        not_at_or_after_time: if matches!(query.direction, reedline::SearchDirection::Backward) {
-            query.start_time
-        } else {
-            query.end_time
-        },
         ..Default::default()
     };
 
@@ -226,7 +193,11 @@ fn reedline_history_query_into_brush(
         }
     }
 
-    if query.filter.cwd_exact.is_some()
+    // Time bounds aren't supported: neither reedline nor brush sets them, and brush's
+    // timestamps aren't handed to reedline.
+    if query.start_time.is_some()
+        || query.end_time.is_some()
+        || query.filter.cwd_exact.is_some()
         || query.filter.cwd_prefix.is_some()
         || query.filter.exit_successful.is_some()
         || query.filter.hostname.is_some()

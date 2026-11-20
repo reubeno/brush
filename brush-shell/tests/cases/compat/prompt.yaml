@@ -543,6 +543,74 @@ cases:
       prompt='\d{%Y}'
       echo "Date format with year: '${prompt@P}'"
 
+  - name: "Date format: POSIX locale forms"
+    env:
+      # A fixed offset that needs no time zone data, and isn't UTC, so that converting to
+      # local time is tested too.
+      TZ: "<+0545>-5:45"
+    stdin: |
+      # Sample the time on both sides of the expansion so a second ticking over doesn't
+      # make the comparison flaky.
+      for fmt in '%c' '%x' '%X' '%r' '%D' '%T' '%Z' '%a %b %e %Y'; do
+        prompt="\\D{${fmt}}"
+        before=$(date +"${fmt}")
+        expanded=${prompt@P}
+        after=$(date +"${fmt}")
+        if [[ ${expanded} == "${before}" || ${expanded} == "${after}" ]]; then
+          echo "${fmt}: matches"
+        else
+          echo "${fmt}: '${expanded}' is neither '${before}' nor '${after}'"
+        fi
+      done
+
+  - name: "Date format: unknown and incomplete directives"
+    incompatible_platforms: ["macos"] # macOS's strftime supports %v and drops the % of what it doesn't know
+    stdin: |
+      prompt='\D{[%E][%O][%v][%%]%}'
+      echo "Unknown directives: '${prompt@P}'"
+
+  - name: "Date format: directives glibc doesn't have"
+    known_failure: true # TODO(prompt): brush renders jiff's extra directives; glibc leaves them as written
+    incompatible_platforms: ["macos"] # macOS's strftime drops the % of what it doesn't know
+    env:
+      TZ: "UTC"
+    stdin: |
+      prompt='\D{[%f][%N][%q][%Q][%:z][%3f][%.f]}'
+      echo "Extra directives: '${prompt@P}'"
+
+  - name: "Date format: glibc flags and modifiers"
+    known_failure: true # TODO(prompt): brush ignores the # flag (case swap), E/O modifiers, and widths on text, and pads numbers differently
+    incompatible_platforms: ["macos"] # these are glibc extensions
+    env:
+      TZ: "UTC"
+    stdin: |
+      prompt='\D{[%#b][%#a][%#h][%#B][%#A][%Ez][%Oy][%EY][%Od]}'
+      echo "Flags and modifiers: '${prompt@P}'"
+      prompt='\D{[%5a][%12B][%8Z][%15F][%10x][%1d][%4C][%3u][%-z][%_z][%^P]}'
+      echo "Widths and padding: '${prompt@P}'"
+
+  - name: "Date format: POSIX TZ string without DST rules"
+    known_failure: true # TODO(prompt): jiff can't resolve a DST zone with no rules, so brush uses UTC
+    env:
+      TZ: "CET-1CEST"
+    stdin: |
+      prompt='\D{%z %Z}'
+      echo "Offset and zone: '${prompt@P}'"
+
+  - name: "Date format: TZ set in the shell"
+    known_failure: true # TODO(prompt): brush uses the time zone it started with, not the shell's TZ
+    env:
+      TZ: "UTC"
+    stdin: |
+      prompt='\D{%Z}'
+      TZ=Asia/Tokyo
+      echo "assigned: ${prompt@P}"
+      export TZ=:Europe/Paris
+      echo "exported with colon: ${prompt@P}"
+      TZ=EST5EDT
+      echo "POSIX string: ${prompt@P}"
+      TZ=Asia/Kolkata eval 'echo "prefix assignment: ${prompt@P}"'
+
   - name: "Time format: A"
     stdin: |
       prompt='\A'

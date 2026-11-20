@@ -132,7 +132,6 @@ brush-winnow-args-adapter = { version = "^0.1.0", path = "../brush-winnow-args-a
 brush-core = { version = "^0.5.0", path = "../brush-core" }
 brush-parser = { version = "^0.4.0", path = "../brush-parser" }
 cfg-if = "1.0.4"
-chrono = "0.4.44"
 fancy-regex = "0.20.0"
 itertools = "0.15.0"
 strum = "0.28.0"
@@ -174,7 +173,7 @@ nix = { version = "0.31.2", features = [
 rlimit = "0.11.0"
 
 [target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
-procfs = "0.18.0"
+procfs = { version = "0.18.0", default-features = false }
 
 [dev-dependencies]
 anyhow = "1.0.102"
