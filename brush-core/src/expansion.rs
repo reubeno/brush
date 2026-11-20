@@ -2357,6 +2357,9 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         Ok(s)
     }
 
+    /// Applies `transform` to each character of `s` that the pattern matches; to every
+    /// character if there's no pattern, or an empty one. The pattern is tried against one
+    /// character at a time, so one that needs more than a character matches nothing.
     fn pattern_to_string<F>(
         s: &str,
         pattern: Option<&patterns::Pattern>,
@@ -2365,20 +2368,23 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     where
         F: Fn(&str) -> String,
     {
-        if let Some(pattern) = pattern {
-            if !pattern.is_empty() {
-                let regex = pattern.to_regex(false, false)?;
-                let result = regex
-                    .replace_all(s.as_ref(), |caps: &fancy_regex::Captures<'_, str>| {
-                        transform(&caps[0])
-                    });
-                Ok(result.into_owned())
+        let Some(pattern) = pattern.filter(|pattern| !pattern.is_empty()) else {
+            return Ok(transform(s));
+        };
+
+        let regex = pattern.to_regex(true, true)?;
+        let mut result = String::with_capacity(s.len());
+        let mut buf = [0; 4];
+        for c in s.chars() {
+            let c: &str = c.encode_utf8(&mut buf);
+            if regex.is_match(c)? {
+                result.push_str(&transform(c));
             } else {
-                Ok(transform(s))
+                result.push_str(c);
             }
-        } else {
-            Ok(transform(s))
         }
+
+        Ok(result)
     }
 
     fn replace_substring(
