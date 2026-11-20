@@ -1,0 +1,40 @@
+# Platform-specific code lives in brush_core::sys, so the rest of brush-core
+# stays platform-neutral. Outside sys, platform code can only exist behind a
+# target cfg -- otherwise some cross-compiled CI target fails to build -- so
+# flagging those cfgs is enough to keep it out.
+#
+# rustc's target cfgs are `unix`, `windows`, and the `target_*` keys
+# (target_os, target_family, target_arch, ...); every other platform is a value
+# of one of those keys. Runtime checks such as `std::env::consts::OS` aren't
+# cfgs and aren't covered.
+id: platform-cfg-outside-sys
+language: rust
+severity: error
+message: Platform-specific code belongs in brush_core::sys.
+note: Move it behind an API in brush_core::sys.
+files: ["brush-core/src/**/*.rs"]
+ignores: ["brush-core/src/sys.rs", "brush-core/src/sys/**"]
+utils:
+  platform-predicate:
+    kind: token_tree
+    has:
+      kind: identifier
+      regex: ^(unix|windows|target_[a-z_]+)$
+      stopBy: end
+rule:
+  any:
+    # #[cfg(...)], #![cfg(...)], #[cfg_attr(...)]
+    - kind: attribute
+      all:
+        - has: { kind: identifier, regex: ^cfg(_attr)?$ }
+        - has: { matches: platform-predicate }
+    # cfg!(...), cfg_select! { ... }
+    - kind: macro_invocation
+      all:
+        - has: { field: macro, regex: (^|::)(cfg|cfg_select)$ }
+        - has: { matches: platform-predicate }
+    # #[cfg(...)] inside a macro body (cfg_if!, macro_rules!, ...), where it's
+    # unparsed tokens rather than an attribute
+    - kind: token_tree
+      regex: ^\[\s*cfg(_attr)?\s*\(
+      has: { matches: platform-predicate }

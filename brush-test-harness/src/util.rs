@@ -1,7 +1,6 @@
 //! Utility functions for the test harness.
 
 use anyhow::Result;
-use descape::UnescapeExt;
 
 /// Get the OS ID from /etc/os-release file.
 /// Returns the value of the ID field, which is the canonical OS identifier.
@@ -16,31 +15,40 @@ pub fn get_host_os_id() -> Option<String> {
     })
 }
 
-/// Reads and processes the expectrl log output.
+/// Reads what a pty session read from the shell, from expectrl's log of the session.
 #[cfg(pty)]
 pub fn read_expectrl_log(log: Vec<u8>) -> Result<String> {
-    let output_str = String::from_utf8(log)?;
-    let output: String = output_str
-        .lines()
-        .filter(|line| line.starts_with("read:"))
-        .map(|line| {
-            line.strip_prefix("read: \"")
-                .unwrap()
-                .strip_suffix('"')
-                .unwrap()
-        })
-        .collect();
+    use descape::UnescapeExt;
 
-    Ok(output)
+    // expectrl logs each chunk it reads as a string (escaped, as Rust's `Debug` does), if it's
+    // UTF-8, or else as a list of bytes (as when a character is split between chunks); so the
+    // chunks' bytes are put back together before they're decoded.
+    let mut output = Vec::new();
+    for line in String::from_utf8(log)?.lines() {
+        if let Some(chunk) = line
+            .strip_prefix("read: \"")
+            .and_then(|line| line.strip_suffix('"'))
+        {
+            let chunk = chunk
+                .to_unescaped()
+                .map_err(|err| anyhow::anyhow!("invalid escape in pty log: {err:?}"))?;
+            output.extend_from_slice(chunk.as_bytes());
+        } else if let Some(bytes) = line
+            .strip_prefix("read:(bytes): [")
+            .and_then(|line| line.strip_suffix(']'))
+        {
+            for byte in bytes.split(", ") {
+                output.push(byte.parse()?);
+            }
+        }
+    }
+
+    Ok(String::from_utf8_lossy(&output).into_owned())
 }
 
-/// Makes expectrl output human-readable by unescaping and stripping ANSI codes.
+/// Makes what a pty session read from the shell human-readable, by removing VT escape sequences.
 pub fn make_expectrl_output_readable<S: AsRef<str>>(output: S) -> String {
-    // Unescape the escaping done by expectrl's logging mechanism.
-    let unescaped = output.as_ref().to_unescaped().unwrap().to_string();
-
-    // Remove VT escape sequences.
-    strip_ansi_escapes::strip_str(unescaped)
+    strip_ansi_escapes::strip_str(output)
 }
 
 /// Writes a diff between two strings to a writer.
@@ -106,4 +114,42 @@ pub fn get_bash_version_str(bash_path: &std::path::Path) -> Result<String> {
     let ver_str = String::from_utf8(output)?;
 
     Ok(ver_str)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn readable_output_keeps_backslashes() {
+        // A transcript is decoded already, so a backslash in it is just text.
+        let output = "PS1='test\\$ '\n";
+        assert_eq!(make_expectrl_output_readable(output), output);
+    }
+
+    #[test]
+    fn readable_output_drops_vt_escape_sequences() {
+        assert_eq!(
+            make_expectrl_output_readable("\u{1b}[31mred\u{1b}[0m"),
+            "red"
+        );
+    }
+
+    #[cfg(pty)]
+    #[test]
+    fn log_is_decoded_once() {
+        // As expectrl logs what it reads: each chunk as a string, if it's UTF-8, or else as
+        // bytes (as when a character is split between chunks).
+        let log = format!(
+            "write: {:?}\nread: {:?}\nread:(bytes): {:?}\nread:(bytes): {:?}\n",
+            "echo",
+            "a \\$ b\r\n",
+            &[0xc3_u8][..],
+            &[0xa9_u8, b'!'][..],
+        );
+        assert_eq!(
+            read_expectrl_log(log.into_bytes()).unwrap(),
+            "a \\$ b\r\né!"
+        );
+    }
 }

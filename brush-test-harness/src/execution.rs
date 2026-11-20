@@ -4,10 +4,10 @@ use crate::config::{ShellConfig, WhichShell};
 use crate::testcase::{ShellInvocation, TestCase, TestCaseSet, TestFile};
 use anyhow::{Context, Result};
 use assert_fs::fixture::{FileWriteStr, PathChild};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 #[cfg(pty)]
 use std::os::unix::process::ExitStatusExt;
-#[cfg(unix)]
-use std::os::unix::{fs::PermissionsExt, process::CommandExt};
 use std::{path::PathBuf, process::ExitStatus};
 
 /// Default timeout for test commands in seconds.
@@ -216,20 +216,26 @@ impl TestCase {
         let start_time = std::time::Instant::now();
         let mut p = expectrl::session::log(expectrl::Session::spawn(cmd)?, writer)?;
         p.set_echo(true)?;
+        if let Some(timeout) = self.timeout_in_seconds {
+            p.set_expect_timeout(Some(std::time::Duration::from_secs(timeout)));
+        }
 
         if let Some(stdin) = &self.stdin {
             for line in stdin.lines() {
                 if let Some(expectation) = line.strip_prefix("#expect:") {
                     if let Err(inner) = p.expect(expectation) {
                         return Ok(RunResult {
-                            exit_status: ExitStatus::from_raw(1),
-                            stdout: read_expectrl_log(log).unwrap_or_default(),
+                            exit_status: exited_with(1),
+                            stdout: read_expectrl_log(log)
+                                .map(make_expectrl_output_readable)
+                                .unwrap_or_default(),
                             stderr: std::format!("failed to expect '{expectation}': {inner}"),
                             duration: start_time.elapsed(),
                         });
                     }
                 } else if let Some(control_code) = line.strip_prefix("#send:") {
                     match control_code.to_lowercase().as_str() {
+                        "ctrl+c" => p.send(expectrl::ControlCode::EndOfText)?,
                         "ctrl+d" => p.send(expectrl::ControlCode::EndOfTransmission)?,
                         "tab" => p.send(expectrl::ControlCode::HorizontalTabulation)?,
                         "enter" => p.send(expectrl::ControlCode::LineFeed)?,
@@ -238,8 +244,10 @@ impl TestCase {
                 } else if line.trim() == "#expect-prompt" {
                     if let Err(inner) = p.expect("test$ ") {
                         return Ok(RunResult {
-                            exit_status: ExitStatus::from_raw(1),
-                            stdout: read_expectrl_log(log).unwrap_or_default(),
+                            exit_status: exited_with(1),
+                            stdout: read_expectrl_log(log)
+                                .map(make_expectrl_output_readable)
+                                .unwrap_or_default(),
                             stderr: std::format!("failed to expect prompt: {inner}"),
                             duration: start_time.elapsed(),
                         });
@@ -252,8 +260,10 @@ impl TestCase {
 
         if let Err(inner) = p.expect(expectrl::Eof) {
             return Ok(RunResult {
-                exit_status: ExitStatus::from_raw(1),
-                stdout: read_expectrl_log(log).unwrap_or_default(),
+                exit_status: exited_with(1),
+                stdout: read_expectrl_log(log)
+                    .map(make_expectrl_output_readable)
+                    .unwrap_or_default(),
                 stderr: std::format!("failed to expect EOF: {inner}"),
                 duration: start_time.elapsed(),
             });
@@ -274,7 +284,7 @@ impl TestCase {
 
         match wait_status {
             expectrl::process::unix::WaitStatus::Exited(_, code) => Ok(RunResult {
-                exit_status: ExitStatus::from_raw(code),
+                exit_status: exited_with(code),
                 stdout: cleaned,
                 stderr: String::new(),
                 duration,
@@ -290,21 +300,8 @@ impl TestCase {
 
     #[allow(unused_mut, reason = "only mutated on some platforms")]
     fn run_command_with_stdin(&self, mut cmd: std::process::Command) -> Result<RunResult> {
-        // SAFETY:
-        // To avoid bash trying to directly access /dev/tty and generate tty-related signals,
-        // we create a new session for the child process. The standard library has a setsid()
-        // API but it's unstable, so we use nix here. Calling pre_exec can be unsafe as
-        // it runs in the child process after fork() but before exec(), and there are constraints
-        // around what can be safely done in that context. However, calling setsid() is generally
-        // considered safe as it doesn't allocate memory or perform complex operations to forked
-        // state.
         #[cfg(unix)]
-        unsafe {
-            cmd.pre_exec(|| {
-                let _ = nix::unistd::setsid();
-                Ok(())
-            })
-        };
+        crate::child::isolate(&mut cmd);
 
         let mut test_cmd = assert_cmd::Command::from_std(cmd);
 
@@ -327,5 +324,31 @@ impl TestCase {
             stderr: String::from_utf8_lossy(cmd_result.stderr.as_slice()).to_string(),
             duration,
         })
+    }
+}
+
+/// Returns the status of a process that exited with the given code.
+#[cfg(pty)]
+fn exited_with(code: i32) -> ExitStatus {
+    // (A raw wait status holds a process's exit code above its low byte.)
+    ExitStatus::from_raw((code & 0xff) << 8)
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(unix)]
+    #[test]
+    fn shell_does_not_inherit_open_fds() {
+        use std::os::fd::AsRawFd;
+
+        // A dup isn't close-on-exec, like the pty fds expectrl opens in another test's thread.
+        let leaky = nix::unistd::dup(std::fs::File::open("/dev/null").unwrap()).unwrap();
+        let fd = leaky.as_raw_fd();
+        let mut cmd = std::process::Command::new("sh");
+        cmd.arg("-c").arg(format!(": <&{fd}"));
+
+        let test_case: super::TestCase = yaml_serde::from_str("{}").unwrap();
+        let result = test_case.run_command_with_stdin(cmd).unwrap();
+        assert!(!result.exit_status.success(), "the shell inherited fd {fd}");
     }
 }

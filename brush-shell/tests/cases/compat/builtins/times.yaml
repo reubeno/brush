@@ -4,3 +4,28 @@ cases:
     ignore_stdout: true
     stdin: |
       times
+
+  - name: "times ignores its arguments"
+    ignore_stderr: true
+    stdin: |
+      times x >/dev/null
+      echo "times: $?"
+      times x -x >/dev/null
+      echo "times x -x: $?"
+      times -- -x >/dev/null
+      echo "times -- -x: $?"
+
+  - name: "times rejects an option"
+    ignore_stderr: true
+    stdin: |
+      times -x >/dev/null
+      echo "times: $?"
+
+  - name: "times operands in POSIX mode"
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      times x >/dev/null
+      echo "after times x: $?"
+      times x -x >/dev/null
+      echo "after times x -x: $?"

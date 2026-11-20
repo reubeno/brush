@@ -172,3 +172,61 @@ cases:
   - name: "Pattern matching: quotes in character class"
     stdin: |
       [[ f == ['f'] ]] && echo "1. Matched"
+
+  # A ']' first in a bracket expression (after any '!' or '^') is a member,
+  # not the end of the expression.
+  - name: "Pattern matching: leading ] in bracket expression"
+    stdin: |
+      [[ "]" == [][] ]] && echo "1. Matched"
+      [[ "a" == [][a] ]] && echo "2. Matched"
+      [[ "[" == []abc[] ]] && echo "3. Matched"
+      [[ "x" == [^][] ]] && echo "4. Matched"
+      [[ "]" == [!]] ]] || echo "5. Not matched"
+      s="a]b[c"
+      echo "${s//[][]/_}"
+      # ble.sh strips function names out of `declare -F` output with this extglob;
+      # the bracket expression is meant to cover ']', '[', '{', '}', ':' and alnum.
+      shopt -s extglob
+      v=$'\nxxx is a function\nhello\n'
+      p=$'\n+([][{}:[:alnum:]]) is a function\n'
+      printf '[%s]\n' "${v//$p/|}"
+
+  # A range whose low end is that leading ']' is validated like any other range;
+  # a reversed one matches nothing (or, inverted, everything).
+  - name: "Pattern matching: ranges starting at a leading ] in bracket expression"
+    stdin: |
+      for s in ']' 'a' 'A' '^' '-'; do
+        [[ "$s" == []-a] ]] && echo "in-range: $s"
+      done
+      for s in ']' 'a' 'A' '^' '-'; do
+        [[ "$s" == []-A] ]] && echo "reversed range matched: $s"
+      done
+      for s in ']' 'a' 'A' '^' '-'; do
+        [[ "$s" == [!]-A] ]] && echo "inverted reversed range matched: $s"
+      done
+      echo "done"
+
+  # An invalid (reversed) range is dropped from the bracket expression, but the
+  # surviving members are still emitted in order. A '^' left first that way must
+  # not negate the generated regex character class.
+  - name: "Pattern matching: invalid range leaving a leading ^ member"
+    stdin: |
+      for s in '^' 'a' 'b'; do
+        [[ "$s" == [9-0^a] ]] && echo "1. matched: $s"
+      done
+      for s in '^' 'a' 'b'; do
+        [[ "$s" == [z-a^] ]] && echo "2. matched: $s"
+      done
+      echo "done"
+
+  # A '-' endpoint must be escaped in the generated regex, or the class becomes
+  # ambiguous and the range collapses to a set.
+  - name: "Pattern matching: '-' as a range endpoint"
+    stdin: |
+      for s in '+' ',' '-' '.' '/' 'a'; do
+        [[ "$s" == [+--] ]] && echo "1. matched: $s"
+      done
+      for s in '+' ',' '-' '.' '/' 'a'; do
+        [[ "$s" == [--/] ]] && echo "2. matched: $s"
+      done
+      echo "done"

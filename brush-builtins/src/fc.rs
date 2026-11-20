@@ -1,16 +1,20 @@
 use brush_core::{ExecutionResult, builtins, error, history};
-use clap::Parser;
 use std::io::Write;
 
 /// Process command history list.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct FcCommand {
+    /// Editor to use (only relevant when not listing or substituting).
+    #[arg(short = 'e', value_name = "ENAME", allow_hyphen_values)]
+    editor: Option<String>,
+
     /// List commands instead of editing them.
     #[arg(short = 'l')]
     list: bool,
 
     /// Suppress line numbers when listing.
-    #[arg(short = 'n', requires = "list")]
+    #[arg(short = 'n', requires = "-l")]
     no_line_numbers: bool,
 
     /// Reverse the order of commands.
@@ -21,24 +25,22 @@ pub(crate) struct FcCommand {
     #[arg(short = 's')]
     substitute: bool,
 
-    /// Editor to use (only relevant when not listing or substituting).
-    #[arg(short = 'e', value_name = "ENAME")]
-    editor: Option<String>,
-
     /// First command in range (number or string prefix).
-    #[arg(value_name = "FIRST", allow_hyphen_values = true)]
+    #[arg(positional, value_name = "FIRST", allow_negative_numbers)]
     first: Option<String>,
 
     /// Last command in range (number or string prefix).
-    #[arg(value_name = "LAST", allow_hyphen_values = true)]
+    #[arg(positional, value_name = "LAST", allow_negative_numbers)]
     last: Option<String>,
 }
 
-impl builtins::Command for FcCommand {
+brush_winnow_args_adapter::impl_parse_args!(FcCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for FcCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         if self.substitute {
@@ -214,9 +216,13 @@ impl FcCommand {
     ) -> Result<usize, brush_core::Error> {
         // Try to parse it as a number. If it's not parseable, then we need to assume
         // it's a string prefix we need to search for.
-        let Ok(num) = spec.parse::<i64>() else {
+        let num = match spec.parse::<i64>() {
+            Ok(num) => num,
+            // A number too large for i64 is still a number, and past either end anyway.
+            Err(e) if *e.kind() == std::num::IntErrorKind::PosOverflow => i64::MAX,
+            Err(e) if *e.kind() == std::num::IntErrorKind::NegOverflow => i64::MIN,
             // Not a number, treat as string prefix
-            return Self::find_command_by_prefix(history, spec);
+            Err(_) => return Self::find_command_by_prefix(history, spec),
         };
 
         let effective_count = effective_history_count(history);
@@ -240,7 +246,7 @@ impl FcCommand {
             }
             std::cmp::Ordering::Less => {
                 // Negative: offset from end (relative to effective count)
-                let offset = (-num) as usize;
+                let offset = usize::try_from(num.unsigned_abs()).unwrap_or(usize::MAX);
                 effective_count.saturating_sub(offset)
             }
         };

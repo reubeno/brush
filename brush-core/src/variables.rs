@@ -187,12 +187,23 @@ impl ShellVariable {
         self
     }
 
-    /// Converts the variable to an indexed array.
+    /// Converts the variable to an indexed array. An unset value stays unset.
     pub fn convert_to_indexed_array(&mut self) -> Result<(), error::Error> {
+        // As in bash, a readonly variable is refused even when it is already an array.
+        if self.is_readonly() {
+            return Err(error::ErrorKind::ReadonlyVariable.into());
+        }
         match self.value() {
-            ShellValue::IndexedArray(_) => Ok(()),
-            ShellValue::AssociativeArray(_) => {
+            ShellValue::IndexedArray(_) | ShellValue::Unset(ShellValueUnsetType::IndexedArray) => {
+                Ok(())
+            }
+            ShellValue::AssociativeArray(_)
+            | ShellValue::Unset(ShellValueUnsetType::AssociativeArray) => {
                 Err(error::ErrorKind::ConvertingAssociativeArrayToIndexedArray.into())
+            }
+            ShellValue::Unset(_) => {
+                self.value = ShellValue::Unset(ShellValueUnsetType::IndexedArray);
+                Ok(())
             }
             _ => {
                 let mut new_values = BTreeMap::new();
@@ -273,8 +284,10 @@ impl ShellVariable {
                 ShellValue::String(base) => match value {
                     ShellValueLiteral::Scalar(suffix) => {
                         if treat_as_int {
-                            let int_value = base.parse::<i64>().unwrap_or(0)
-                                + suffix.parse::<i64>().unwrap_or(0);
+                            let int_value = base
+                                .parse::<i64>()
+                                .unwrap_or(0)
+                                .wrapping_add(suffix.parse::<i64>().unwrap_or(0));
                             base.clear();
                             base.push_str(int_value.to_string().as_str());
                         } else {
@@ -380,6 +393,13 @@ impl ShellVariable {
         value: String,
         append: bool,
     ) -> Result<(), error::Error> {
+        // Readonly is enforced here and not only in `assign`, so that every path reaching an
+        // element -- a subscripted assignment, a declaration builtin, arithmetic, or an
+        // assignment expansion -- is blocked, not just whole-variable assignment.
+        if self.is_readonly() {
+            return Err(error::ErrorKind::ReadonlyVariable.into());
+        }
+
         match &self.value {
             ShellValue::Unset(_) => {
                 self.assign(ShellValueLiteral::Array(ArrayLiteral(vec![])), false)?;
@@ -402,9 +422,11 @@ impl ShellVariable {
 
                     let mut new_value;
                     if treat_as_int {
-                        new_value = (existing_value.parse::<i64>().unwrap_or(0)
-                            + value.parse::<i64>().unwrap_or(0))
-                        .to_string();
+                        new_value = existing_value
+                            .parse::<i64>()
+                            .unwrap_or(0)
+                            .wrapping_add(value.parse::<i64>().unwrap_or(0))
+                            .to_string();
                     } else {
                         new_value = existing_value.to_owned();
                         new_value.push_str(value.as_str());
@@ -423,9 +445,11 @@ impl ShellVariable {
 
                     let mut new_value;
                     if treat_as_int {
-                        new_value = (existing_value.parse::<i64>().unwrap_or(0)
-                            + value.parse::<i64>().unwrap_or(0))
-                        .to_string();
+                        new_value = existing_value
+                            .parse::<i64>()
+                            .unwrap_or(0)
+                            .wrapping_add(value.parse::<i64>().unwrap_or(0))
+                            .to_string();
                     } else {
                         new_value = existing_value.to_owned();
                         new_value.push_str(value.as_str());
@@ -499,6 +523,12 @@ impl ShellVariable {
     ///
     /// * `index` - The index at which to unset the value.
     pub fn unset_index(&mut self, index: &str) -> Result<bool, error::Error> {
+        // As with assignment, readonly is enforced here so that every path reaching an element is
+        // blocked, not just whole-variable unset.
+        if self.is_readonly() {
+            return Err(error::ErrorKind::ReadonlyVariable.into());
+        }
+
         match &mut self.value {
             ShellValue::Unset(ty) => match ty {
                 ShellValueUnsetType::Untyped => Err(error::ErrorKind::NotArray.into()),
@@ -532,7 +562,18 @@ impl ShellVariable {
     /// Returns the canonical attribute flag string for this variable.
     pub fn attribute_flags(&self, shell: &Shell<impl extensions::ShellExtensions>) -> String {
         let value = self.resolve_value(shell);
+        self.attribute_flags_for_value(&value)
+    }
 
+    /// Returns the canonical attribute flags using an already resolved value.
+    ///
+    /// Use this when the same value is also inspected or formatted, so a dynamic
+    /// variable is not evaluated again while computing its type flags.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The resolved value of this variable.
+    pub fn attribute_flags_for_value(&self, value: &ShellValue) -> String {
         let mut result = String::new();
 
         if value.is_indexed_array() {
@@ -637,6 +678,7 @@ pub enum ShellValueUnsetType {
 
 /// A shell value literal; used for assignment.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub enum ShellValueLiteral {
     /// A scalar value.
     Scalar(String),
@@ -698,9 +740,28 @@ impl From<Vec<&str>> for ShellValueLiteral {
     }
 }
 
+impl From<Vec<String>> for ShellValueLiteral {
+    fn from(value: Vec<String>) -> Self {
+        Self::Array(ArrayLiteral(value.into_iter().map(|s| (None, s)).collect()))
+    }
+}
+
 /// An array literal.
 #[derive(Clone, Debug)]
-pub struct ArrayLiteral(pub Vec<(Option<String>, String)>);
+pub struct ArrayLiteral(pub(crate) Vec<(Option<String>, String)>);
+
+impl ArrayLiteral {
+    /// Returns an array literal with the given elements, in order. An element
+    /// with a key is assigned at that key (`[key]=value`); one without is
+    /// assigned at the next index.
+    ///
+    /// # Arguments
+    ///
+    /// * `elements` - The elements, each an optional key and a value.
+    pub const fn new(elements: Vec<(Option<String>, String)>) -> Self {
+        Self(elements)
+    }
+}
 
 /// Style for formatting a shell variable's value.
 #[derive(Copy, Clone, Debug)]
@@ -1039,10 +1100,15 @@ fn get_key_for_indexed_array(
 ) -> Result<u64, error::Error> {
     let mut index_value = index_str.parse::<i64>().unwrap_or(0);
 
-    // Handle negative indices, but check for out-of-range values.
+    // Handle negative indices, but check for out-of-range values. A negative index is
+    // relative to one greater than the maximum index (not the element count, which
+    // differs for sparse arrays).
     #[expect(clippy::cast_possible_wrap)]
     if index_value < 0 {
-        index_value += values.len() as i64;
+        let end = values
+            .last_key_value()
+            .map_or(0, |(k, _)| (*k as i64).saturating_add(1));
+        index_value += end;
         if index_value < 0 {
             return Err(error::ErrorKind::ArrayIndexOutOfRange(index_str.to_owned()).into());
         }

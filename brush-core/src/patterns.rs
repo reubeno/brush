@@ -1,7 +1,7 @@
 //! Shell patterns
 
 use crate::{error, regex, sys, trace_categories};
-use std::{collections::VecDeque, path::Path};
+use std::{borrow::Cow, collections::VecDeque, path::Path};
 
 /// Represents a piece of a shell pattern.
 #[derive(Clone, Debug)]
@@ -17,6 +17,15 @@ impl PatternPiece {
         match self {
             Self::Pattern(s) => s,
             Self::Literal(s) => s,
+        }
+    }
+
+    /// Returns the text this piece matches when it holds no glob characters. A backslash in
+    /// a pattern piece escapes the next character and is discarded when matching.
+    fn to_unescaped_str(&self) -> Cow<'_, str> {
+        match self {
+            Self::Pattern(s) if s.contains('\\') => Cow::Owned(remove_pattern_escapes(s)),
+            Self::Pattern(s) | Self::Literal(s) => Cow::Borrowed(s),
         }
     }
 }
@@ -263,7 +272,7 @@ impl Pattern {
             }) {
                 let flattened = component
                     .iter()
-                    .map(|piece| piece.as_str())
+                    .map(PatternPiece::to_unescaped_str)
                     .collect::<String>();
                 paths_so_far.retain_mut(|p| {
                     sys::fs::push_path_for_pattern(p, &flattened);
@@ -286,9 +295,12 @@ impl Pattern {
                     .set_extended_globbing(self.enable_extended_globbing)
                     .set_case_insensitive(self.case_insensitive);
 
+                // Skip empty pieces (e.g. from `"".*`) so that a dot right after
+                // them still counts as the leading dot.
                 let subpattern_starts_with_dot = subpattern
                     .pieces
-                    .first()
+                    .iter()
+                    .find(|piece| !piece.as_str().is_empty())
                     .is_some_and(|piece| piece.as_str().starts_with('.'));
 
                 let allow_dot_files = !options.require_dot_in_pattern_to_match_dot_files
@@ -434,6 +446,21 @@ impl Pattern {
     }
 }
 
+/// Removes the backslashes that escape characters in a shell pattern.
+fn remove_pattern_escapes(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            // A trailing backslash has nothing to escape; keep it.
+            result.push(chars.next().unwrap_or('\\'));
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
 /// Checks whether a string contains glob metacharacters that would trigger
 /// pathname expansion. Delegates to the pattern parser's grammar, which is
 /// the single source of truth for what constitutes a glob metacharacter.
@@ -494,6 +521,12 @@ pub(crate) fn remove_smallest_matching_prefix<'a>(
 ) -> Result<&'a str, error::Error> {
     if let Some(pattern) = pattern {
         let re = pattern.to_regex(true, true)?;
+
+        // The smallest match may be the empty string (e.g., for `*`).
+        if re.is_match("")? {
+            return Ok(s);
+        }
+
         let mut indices = s.char_indices();
 
         #[allow(
@@ -549,6 +582,12 @@ pub(crate) fn remove_smallest_matching_suffix<'a>(
 ) -> Result<&'a str, error::Error> {
     if let Some(pattern) = pattern {
         let re = pattern.to_regex(true, true)?;
+
+        // The smallest match may be the empty string (e.g., for `*`).
+        if re.is_match("")? {
+            return Ok(s);
+        }
+
         #[allow(
             clippy::string_slice,
             reason = "because we get the indices from char_indices()"
@@ -686,6 +725,10 @@ mod tests {
             "oof"
         );
         assert_eq!(
+            remove_smallest_matching_prefix("ooof", Some(&Pattern::from("*")))?,
+            "ooof"
+        );
+        assert_eq!(
             remove_smallest_matching_prefix("ooof", Some(&Pattern::from("ooof")))?,
             ""
         );
@@ -746,6 +789,10 @@ mod tests {
         assert_eq!(
             remove_smallest_matching_suffix("fooo", Some(&Pattern::from("o*")))?,
             "foo"
+        );
+        assert_eq!(
+            remove_smallest_matching_suffix("fooo", Some(&Pattern::from("*")))?,
+            "fooo"
         );
         assert_eq!(
             remove_smallest_matching_suffix("fooo", Some(&Pattern::from("fooo")))?,
@@ -927,6 +974,15 @@ mod tests {
         assert!(!make_extglob("+(x+(ab)y)").exactly_matches("xyxy")?);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_remove_pattern_escapes() {
+        assert_eq!(remove_pattern_escapes("abc"), "abc");
+        assert_eq!(remove_pattern_escapes(r"s\ub"), "sub");
+        assert_eq!(remove_pattern_escapes(r"a\\b"), r"a\b");
+        assert_eq!(remove_pattern_escapes(r"\*x"), "*x");
+        assert_eq!(remove_pattern_escapes("ab\\"), "ab\\");
     }
 
     #[test]

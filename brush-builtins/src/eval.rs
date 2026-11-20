@@ -1,19 +1,21 @@
 use brush_core::{ExecutionResult, builtins};
-use clap::Parser;
 
 /// Evaluate the given string as script.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EvalCommand {
     /// The script to evaluate.
-    #[clap(allow_hyphen_values = true)]
+    #[arg(positional, double_dash = "automatic")]
     args: Vec<String>,
 }
 
-impl builtins::Command for EvalCommand {
+brush_winnow_args_adapter::impl_parse_args!(EvalCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EvalCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if !self.args.is_empty() {

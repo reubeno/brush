@@ -51,6 +51,13 @@ impl Drop for TerminalControl {
 /// Describes high-level terminal settings that can be requested.
 #[derive(Default, bon::Builder)]
 pub struct Settings {
+    /// Whether to put the terminal in raw mode, as `cfmakeraw` does: input
+    /// arrives a byte at a time, as typed, without being echoed, translated
+    /// (e.g., Enter to newline), or turned into signals, and output isn't
+    /// processed. The other settings then apply on top of it (e.g., to have
+    /// newlines output as CRLF pairs).
+    #[builder(default)]
+    pub raw_input: bool,
     /// Whether to enable input echoing.
     pub echo_input: Option<bool>,
     /// Whether to enable line input (sometimes known as canonical mode).

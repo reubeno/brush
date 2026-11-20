@@ -31,6 +31,19 @@ pub fn pattern_to_regex_str(
     Ok(regex_str)
 }
 
+/// Formats a range between two bracket expression members, returning `None` if the
+/// range is reversed (and therefore matches nothing).
+fn bracket_range(from: (String, char), to: (String, char)) -> Option<String> {
+    let (from_str, from_c) = from;
+    let (to_str, to_c) = to;
+
+    if from_c <= to_c {
+        Some(std::format!("{from_str}-{to_str}"))
+    } else {
+        None
+    }
+}
+
 peg::parser! {
     grammar pattern_to_regex_translator(enable_extended_globbing: bool) for str {
         pub(crate) rule pattern() -> String =
@@ -55,8 +68,12 @@ peg::parser! {
             ['\\'] [c] { c.to_string() }
 
         rule bracket_expression() -> String =
-            "[" invert:(invert_char()?) members:bracket_member()+ "]" {
-                let mut members = members.into_iter().flatten().collect::<Vec<_>>();
+            "[" invert:(invert_char()?) leading:(leading_bracket_member()?) members:bracket_member()* "]" {
+                let mut members = leading
+                    .into_iter()
+                    .chain(members)
+                    .flatten()
+                    .collect::<Vec<_>>();
 
                 // If we completed the parse but ended up with no valid members
                 // of the bracket expression, then return a regex that matches nothing.
@@ -75,6 +92,18 @@ peg::parser! {
                     std::format!("[{}]", members.join(""))
                 }
             }
+
+        // A ']' first in the expression (after any '!' or '^') is a member, not the end.
+        // It may also be the low end of a range, so it goes through the same range
+        // validation as any other member.
+        rule leading_bracket_member() -> Option<String> =
+            from:close_bracket_member() "-" to:single_char_bracket_member() {
+                bracket_range(from, to)
+            } /
+            from:close_bracket_member() { Some(from.0) }
+
+        rule close_bracket_member() -> (String, char) =
+            "]" { (String::from(r"\]"), ']') }
 
         rule invert_char() -> bool =
             ['!' | '^'] { true }
@@ -95,22 +124,16 @@ peg::parser! {
 
         rule char_range() -> Option<String> =
             from:single_char_bracket_member() "-" to:single_char_bracket_member() {
-                let (from_str, from_c) = from;
-                let (to_str, to_c) = to;
-
-                // Evaluate if the range is valid.
-                if from_c <= to_c {
-                    Some(std::format!("{from_str}-{to_str}"))
-                } else {
-                    None
-                }
+                bracket_range(from, to)
             }
 
         rule single_char_bracket_member() -> (String, char) =
             // Preserve escaped characters as-is.
             ['\\'] [c] { (std::format!("\\{c}"), c) } /
-            // Escape opening bracket.
-            ['['] { (String::from(r"\["), '[') } /
+            // Escape the characters that are special inside a regex character class;
+            // left bare, a '^' first in the class would negate it and a '-' would be
+            // read as a range separator.
+            [c if matches!(c, '[' | '^' | '-')] { (std::format!("\\{c}"), c) } /
             // Any other character except closing bracket gets added as-is.
             [c if c != ']'] { (c.to_string(), c) }
 
@@ -234,10 +257,41 @@ mod tests {
         assert_eq!(pattern_to_regex_str(r"[\(]", true)?, r"[\(]");
         assert_eq!(pattern_to_regex_str(r"[(]", true)?, "[(]");
         assert_eq!(pattern_to_regex_str("[[:digit:]]", true)?, "[[:digit:]]");
-        assert_eq!(pattern_to_regex_str(r"[-(),!]*", true)?, r"[-(),!].*");
-        assert_eq!(pattern_to_regex_str(r"[-\(\),\!]*", true)?, r"[-\(\),\!].*");
+        assert_eq!(pattern_to_regex_str(r"[-(),!]*", true)?, r"[\-(),!].*");
+        assert_eq!(
+            pattern_to_regex_str(r"[-\(\),\!]*", true)?,
+            r"[\-\(\),\!].*"
+        );
         assert_eq!(pattern_to_regex_str(r"[a\-b]", true)?, r"[a\-b]");
         assert_eq!(pattern_to_regex_str(r"[a\-\*]", true)?, r"[a\-\*]");
+
+        // A ']' in the first member position (after any '!' or '^') is a member of the
+        // bracket expression, not its terminator.
+        assert_eq!(pattern_to_regex_str("[]]", true)?, r"[\]]");
+        assert_eq!(pattern_to_regex_str("[][]", true)?, r"[\]\[]");
+        assert_eq!(pattern_to_regex_str("[]abc[]", true)?, r"[\]abc\[]");
+        assert_eq!(pattern_to_regex_str("[]]]", true)?, r"[\]]\]");
+        assert_eq!(pattern_to_regex_str("[!]]", true)?, r"[^\]]");
+        assert_eq!(pattern_to_regex_str("[^][]", true)?, r"[^\]\[]");
+
+        // A range starting at that ']' is validated like any other range.
+        assert_eq!(pattern_to_regex_str("[]-a]", true)?, r"[\]-a]");
+        assert_eq!(pattern_to_regex_str("[]-a[]", true)?, r"[\]-a\[]");
+        assert_eq!(pattern_to_regex_str("[]-A]", true)?, "(?!)");
+        assert_eq!(pattern_to_regex_str("[!]-A]", true)?, ".");
+
+        // '^' and '-' are escaped as members, so a '^' left first by a dropped
+        // range can't negate the class and a '-' endpoint can't be read as a
+        // range separator.
+        assert_eq!(pattern_to_regex_str("[9-0^a]", true)?, r"[\^a]");
+        assert_eq!(pattern_to_regex_str("[z-a^]", true)?, r"[\^]");
+        assert_eq!(pattern_to_regex_str("[+--]", true)?, r"[+-\-]");
+        assert_eq!(pattern_to_regex_str("[--/]", true)?, r"[\--/]");
+
+        // An unterminated bracket expression is still just literal text.
+        assert_eq!(pattern_to_regex_str("[]", true)?, r"\[\]");
+        assert_eq!(pattern_to_regex_str("[!]", true)?, r"\[!\]");
+
         Ok(())
     }
 
@@ -289,6 +343,11 @@ mod tests {
         assert!(pattern_has_glob_metacharacters("[a-z]", false));
         assert!(pattern_has_glob_metacharacters("[!a]", false));
 
+        // A leading ']' is a member, so these are bracket expressions too.
+        assert!(pattern_has_glob_metacharacters("[]]", false));
+        assert!(pattern_has_glob_metacharacters("[][]", false));
+        assert!(pattern_has_glob_metacharacters("[!]]", false));
+
         // Lone `]` is NOT a glob metacharacter.
         assert!(!pattern_has_glob_metacharacters("]", false));
         assert!(!pattern_has_glob_metacharacters("foo]", false));
@@ -296,6 +355,8 @@ mod tests {
 
         // Lone `[` without matching `]` is NOT a glob metacharacter.
         assert!(!pattern_has_glob_metacharacters("[", false));
+        assert!(!pattern_has_glob_metacharacters("[]", false));
+        assert!(!pattern_has_glob_metacharacters("[!]", false));
         assert!(!pattern_has_glob_metacharacters("[abc", false));
         assert!(!pattern_has_glob_metacharacters("a[b", false));
 

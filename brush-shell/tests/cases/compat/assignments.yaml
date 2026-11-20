@@ -76,3 +76,10 @@ cases:
       PATH=/usr/bin
       PATH+=:~:~/local
       echo "After append colon-tilde: ${PATH}"
+
+  - name: "A compound assignment after an ordinary command is a syntax error"
+    known_failure: true # TODO(parser): `echo a=(1 2)` is accepted and prints `a=(1 2)`
+    ignore_stderr: true
+    stdin: |
+      echo a=(1 2)
+      echo "after: $?"

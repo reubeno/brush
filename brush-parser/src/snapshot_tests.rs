@@ -28,7 +28,7 @@ fn test_parser_using_yaml_test_cases() {
 
 fn test_parser_using_yaml(path: &Path) -> Result<()> {
     let yaml_file = std::fs::File::open(path)?;
-    let test_case_set: TestCaseSet = serde_yaml::from_reader(yaml_file)
+    let test_case_set: TestCaseSet = yaml_serde::from_reader(yaml_file)
         .context(format!("parsing {}", path.to_string_lossy()))?;
 
     test_parser_using_test_case_set(&test_case_set);

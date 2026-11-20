@@ -49,3 +49,85 @@ cases:
   - name: "exec -a"
     stdin: |
       exec -a shellname $0 -c 'echo "0: $0"'
+
+  - name: "exec -c of a command found in the shell's PATH"
+    test_files:
+      - path: "bin/myscript"
+        executable: true
+        contents: |
+          #!/bin/sh
+          echo "in myscript"
+    stdin: |
+      PATH="${PWD}/bin:${PATH}"
+      exec -c myscript
+      echo "not reached"
+
+  - name: "exec of a missing command exits the shell"
+    known_failure: true # TODO(exec): a failed exec doesn't end a non-interactive shell
+    ignore_stderr: true
+    stdin: |
+      (exec nonexistent-command; echo "subshell still running: $?")
+      echo "subshell: $?"
+      exec /nonexistent-command
+      echo "still running: $?"
+
+  - name: "exec in a subshell ends the subshell"
+    known_failure: true # TODO(exec): exec in a subshell doesn't end the subshell
+    stdin: |
+      (exec true; echo "still running")
+      echo "true: $?"
+      (exec sh -c 'exit 3'; echo "still running")
+      echo "exit 3: $?"
+      (exec -a renamed sh -c 'echo "argv0: $0"')
+      (exec -l sh -c 'echo "login argv0: $0"')
+      echo hello | (exec cat; echo "still running")
+
+  - name: "exec in a subshell runs the program, not a builtin"
+    known_failure: true # TODO(exec): exec in a subshell runs a builtin of the same name instead
+    ignore_stderr: true
+    stdin: |
+      # The printf builtin would print nothing; the program prints "-v".
+      (exec printf -v out hi)
+
+  - name: "exec of a missing program reports it"
+    known_failure: true # TODO(exec): exec of a program that can't be found reports nothing at the top level
+    stdin: |
+      "$0" -c 'exec ./no-such-program' 2> err.txt
+      echo "status: $?"
+      [[ -s err.txt ]] && echo "reported" || echo "silent"
+      # (What it says has the test's directory in it, which differs between shells.)
+      rm err.txt
+
+  - name: "exec starts a program by its full path"
+    known_failure: true # TODO(exec): exec starts a program by the path it was found by, not its full path, so a script sees that as its $0
+    test_files:
+      - path: "sub/prog"
+        executable: true
+        contents: |
+          #!/bin/sh
+          echo "$0"
+    stdin: |
+      cd sub
+      started_by=$("$0" -c 'exec ./prog')
+      [[ ${started_by} == "${PWD}/prog" ]] && echo "full path" || echo "other: ${started_by}"
+
+  - name: "exec -a takes a name that starts with -"
+    stdin: |
+      exec -a -shellname $0 --noprofile -c 'echo "0: $0"'
+
+  - name: "exec passes the command's options through"
+    stdin: |
+      (exec -- echo a)
+      (exec echo -a b)
+      (exec echo -- c)
+      # A top-level exec replaces the shell with the program, so its arguments
+      # take the launch path rather than the builtin echo.
+      printf '#!/bin/sh\nprintf "[%%s]" "$@"; echo\n' > args; chmod +x args
+      "$0" --noprofile --norc -c 'exec -- ./args a'
+      "$0" --noprofile --norc -c 'exec ./args -a b'
+      "$0" --noprofile --norc -c 'exec ./args -- c'
+      rm args
+
+  - name: "exec rejects an unknown option with status 2"
+    stdin: |
+      (exec -x echo hi) 2>/dev/null; echo "rc=$?"

@@ -24,6 +24,27 @@ cases:
     stdin: |
       ulimit -n
 
+  - name: "ulimit -s"
+    stdin: |
+      ulimit -s
+
+  - name: "ulimit -t"
+    stdin: |
+      ulimit -t
+
+  - name: "ulimit -u"
+    stdin: |
+      ulimit -u
+
+  - name: "ulimit -v"
+    stdin: |
+      ulimit -v
+
+  - name: "ulimit -p"
+    incompatible_platforms: ["macos"] # the pipe size differs there
+    stdin: |
+      ulimit -p
+
   - name: "ulimit -d unlimited"
     stdin: |
       ulimit -d unlimited
@@ -35,3 +56,126 @@ cases:
   - name: "ulimit -m unlimited"
     stdin: |
       ulimit -m unlimited
+
+  - name: "ulimit with an invalid number fails with status 1"
+    ignore_stderr: true
+    stdin: |
+      ulimit -n abc
+      echo "ulimit: $?"
+
+  - name: "ulimit reports an invalid number and leaves the limit alone"
+    stdin: |
+      strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
+      before=$(ulimit -S -n)
+      ulimit -S -n 12abc 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+      ulimit -S -n 1+1 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+      ulimit abc 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+      [[ $(ulimit -S -n) == "$before" ]] && echo "kept"
+      ulimit -S -n 500 abc; echo "rc=$?"; ulimit -S -n
+
+  - name: "ulimit in a subshell stays there"
+    known_failure: true # TODO(ulimit): a subshell runs in the shell's own process, so its limits are the shell's
+    stdin: |
+      ulimit -S -n 512
+      ( ulimit -S -n 256 )
+      echo "after a subshell: $(ulimit -S -n)"
+      ulimit -S -n 256 | true
+      echo "after a pipeline stage: $(ulimit -S -n)"
+
+  - name: "ulimit with no options reports the file size limit"
+    stdin: |
+      ulimit
+
+  - name: "ulimit -S and -H report the soft and hard limits"
+    stdin: |
+      ulimit -Sn
+      ulimit -Hn
+      ulimit -S -n
+
+  - name: "ulimit sets a limit given as a separate or attached value"
+    stdin: |
+      ulimit -n 100; ulimit -n
+      ulimit -n99; ulimit -n
+      ulimit -Sn 98; ulimit -Sn
+      ulimit -c 0; ulimit -c
+
+  - name: "ulimit sets the file size limit from an operand"
+    # Large enough not to stop the shell writing, e.g., coverage data at exit.
+    stdin: |
+      ulimit 100000000; ulimit -f
+      ulimit -- 90000000; echo "ulimit -- 90000000: $?"; ulimit -f
+
+  - name: "ulimit sets a limit to its soft limit"
+    stdin: |
+      ulimit -n soft; echo "ulimit -n soft: $?"; ulimit -n
+
+  - name: "ulimit sets several limits at once"
+    stdin: |
+      ulimit -n 100 -c 0; ulimit -n; ulimit -c
+
+  - name: "ulimit ignores operands after the first value"
+    stdin: |
+      ulimit -n 100 200; echo "ulimit -n 100 200: $?"; ulimit -n
+
+  - name: "ulimit rejects an unknown option and a negative limit"
+    ignore_stderr: true
+    stdin: |
+      ulimit -Z; echo "ulimit -Z: $?"
+      ulimit -n -1; echo "ulimit -n -1: $?"
+
+  - name: "ulimit rejects a limit too large for its unit"
+    ignore_stderr: true
+    stdin: |
+      before=$(ulimit -S -c)
+      ulimit -S -c 36028797018963968; echo "ulimit -c 2^55: $?"
+      ulimit -S -c 9223372036854775807; echo "ulimit -c 2^63-1: $?"
+      ulimit -S -v 18014398509481984; echo "ulimit -v 2^54: $?"
+      [[ $(ulimit -S -c) == "$before" ]] && echo "core limit unchanged"
+      ulimit -S -c 0 -v 18014398509481984; echo "ulimit -c 0 -v 2^54: $?"
+      echo "core limit set before the bad one: $(ulimit -S -c)"
+
+  - name: "ulimit lists several resources in the order given"
+    known_failure: true # TODO(ulimit): brush lists them in a fixed order, with its own labels and widths
+    stdin: |
+      ulimit -n -c
+      ulimit -s -t
+
+  - name: "ulimit labels a resource it reports alongside one it sets"
+    known_failure: true # TODO(ulimit): brush prints the bare value
+    stdin: |
+      ulimit -c 0 -n
+
+  - name: "ulimit takes a limit's value after --"
+    known_failure: true # TODO(ulimit): brush reports the limit and ignores the value
+    stdin: |
+      ulimit -n -- 100; echo "ulimit -n -- 100: $?"; ulimit -n
+
+  - name: "ulimit rejects a resource this platform lacks with status 2"
+    known_failure: true # TODO(ulimit): brush takes each and fails with "unsupported resource", status 1
+    incompatible_platforms: ["macos"] # which of these exist differs there
+    ignore_stderr: true
+    stdin: |
+      ulimit -b; echo "ulimit -b: $?"
+      ulimit -k; echo "ulimit -k: $?"
+      ulimit -P; echo "ulimit -P: $?"
+      ulimit -T; echo "ulimit -T: $?"
+
+  - name: "ulimit --help fails with status 2"
+    stdin: |
+      ulimit --help >/dev/null 2>&1; echo "ulimit --help: $?"
+
+  - name: "ulimit rejects an unknown long option with status 2"
+    ignore_stderr: true
+    stdin: |
+      ulimit --bogus; echo "ulimit --bogus: $?"
+
+  - name: "ulimit -a lists every limit"
+    known_failure: true # TODO(ulimit): brush's labels, widths and order differ, e.g. `(block, -c)` for `(blocks, -c)`
+    stdin: |
+      ulimit -a
+
+  - name: "ulimit -a with another resource lists each limit once"
+    known_failure: true # TODO(ulimit): brush lists the other resource a second time
+    stdin: |
+      a=$(ulimit -a); an=$(ulimit -a -n)
+      [[ $a == "$an" ]] && echo same || echo differs

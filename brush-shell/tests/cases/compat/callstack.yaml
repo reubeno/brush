@@ -568,6 +568,18 @@ cases:
       echo "  BASH_SOURCE[0]: ${BASH_SOURCE[0]}"
       source script.sh
 
+  - name: "BASH_SOURCE includes the outer script when sourcing at top level"
+    test_files:
+      - path: "source.bash"
+        contents: |
+          source test.bash
+      - path: "test.bash"
+        contents: |
+          echo "${BASH_SOURCE[0]}"
+          echo "${BASH_SOURCE[1]}"
+          echo "${BASH_SOURCE[*]}"
+    args: ["./source.bash"]
+
   - name: "FUNCNAME at top level"
     stdin: |
       echo "Top level FUNCNAME: '${FUNCNAME}'"

@@ -100,9 +100,44 @@ fn is_regular_file(fd: BorrowedFd<'_>) -> bool {
     match nix::sys::stat::fstat(fd) {
         Ok(stat) => {
             use nix::sys::stat::{SFlag, mode_t};
-            mode_t::try_from(stat.st_mode)
-                .is_ok_and(|mode| SFlag::from_bits_truncate(mode).contains(SFlag::S_IFREG))
+            // By the whole file type: a socket's, for one, has the regular file's bit set.
+            mode_t::try_from(stat.st_mode).is_ok_and(|mode| {
+                (SFlag::from_bits_truncate(mode) & SFlag::S_IFMT) == SFlag::S_IFREG
+            })
         }
         Err(_) => false,
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::panic_in_result_fn, reason = "assertions in a fallible test")]
+mod tests {
+    use std::os::fd::AsFd as _;
+
+    use super::*;
+
+    /// Only a regular file is one: a socket's file type has the regular file's bit set among
+    /// others, and a read from one must poll, not take the input to be ready.
+    #[test]
+    fn only_a_regular_file_is_regular() -> std::io::Result<()> {
+        let file = tempfile::tempfile()?;
+        assert!(is_regular_file(file.as_fd()));
+
+        let (socket, _other_end) = std::os::unix::net::UnixStream::pair()?;
+        assert!(!is_regular_file(socket.as_fd()));
+
+        let (reader, _writer) = std::io::pipe()?;
+        assert!(!is_regular_file(reader.as_fd()));
+        Ok(())
+    }
+
+    /// Polling a socket with nothing to read waits out the timeout, as `read -t` from one does.
+    #[test]
+    fn a_socket_without_input_times_out() -> std::io::Result<()> {
+        let (socket, _other_end) = std::os::unix::net::UnixStream::pair()?;
+        let socket: OpenFile = std::fs::File::from(std::os::fd::OwnedFd::from(socket)).into();
+
+        assert!(!poll_for_input(&socket, Duration::from_millis(50))?);
+        Ok(())
     }
 }

@@ -75,3 +75,19 @@ cases:
       echo "Displaying emacs"
       shopt -o emacs
       shopt -o -p emacs
+
+  - name: "shopt refuses to set and unset at once"
+    stdin: |
+      strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
+      shopt -s -u extglob 2>&1 | strip
+      echo "shopt: ${PIPESTATUS[0]}"
+      shopt -su nullglob 2>&1 | strip
+      echo "shopt: ${PIPESTATUS[0]}"
+      shopt -p nullglob
+
+  - name: "shopt takes -- and -o with -s, -u, -p and -q"
+    stdin: |
+      shopt -s -- nullglob; shopt -p nullglob
+      shopt -so errexit; [[ $- == *e* ]] && echo "errexit on"
+      shopt -po errexit
+      shopt -uo errexit; shopt -qo errexit; echo "q=$?"

@@ -1,15 +1,14 @@
-use clap::Parser;
-use std::{borrow::Cow, os::unix::process::CommandExt};
+use std::borrow::Cow;
 
-use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, commands};
+use brush_core::{
+    ErrorKind, ExecutionExitCode, ExecutionResult, builtins, commands,
+    extensions::ProcessLauncher as _,
+};
 
 /// Exec the provided command.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct ExecCommand {
-    /// Pass given name as zeroth argument to command.
-    #[arg(short = 'a', value_name = "NAME")]
-    name_for_argv0: Option<String>,
-
     /// Exec command with an empty environment.
     #[arg(short = 'c')]
     empty_environment: bool,
@@ -18,16 +17,22 @@ pub(crate) struct ExecCommand {
     #[arg(short = 'l')]
     exec_as_login: bool,
 
+    /// Pass given name as zeroth argument to command.
+    #[arg(short = 'a', value_name = "NAME", allow_hyphen_values)]
+    name_for_argv0: Option<String>,
+
     /// Command and args.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, double_dash = "automatic")]
     args: Vec<String>,
 }
 
-impl builtins::Command for ExecCommand {
+brush_winnow_args_adapter::impl_parse_args!(ExecCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ExecCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         if self.args.is_empty() {
@@ -64,15 +69,24 @@ impl builtins::Command for ExecCommand {
             argv0 = Cow::Owned(std::format!("-{argv0}"));
         }
 
-        let mut cmd = commands::compose_std_command(
+        // Resolve the program as running it as a command would.
+        let Some(program) = context.shell.resolve_external_command(&self.args[0]) else {
+            return Ok(ExecutionExitCode::NotFound.into());
+        };
+
+        let request = commands::compose_launch_request(
             &context,
-            &self.args[0],
+            &program,
             argv0.as_str(),
             &self.args[1..],
-            self.empty_environment,
-        )?;
+            if self.empty_environment {
+                commands::ProgramEnvironment::Empty
+            } else {
+                commands::ProgramEnvironment::Exported
+            },
+        );
 
-        let exec_error = cmd.exec();
+        let exec_error = context.shell.process_launcher().exec(request);
 
         if exec_error.kind() == std::io::ErrorKind::NotFound {
             Ok(ExecutionExitCode::NotFound.into())

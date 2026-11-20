@@ -6,7 +6,8 @@
 //!   binaries like brush-compat-tests, brush-interactive-tests, brush-completion-tests)
 //! - **Integration tests**: All workspace tests including unit tests and integration tests that
 //!   execute the brush binary
-//! - **External suites**: Third-party test suites like bash-completion
+//! - **End-to-end tests**: Real applications' own suites (including bash-completion's), run in
+//!   containers; see `e2e/README.md`
 //!
 //! Both unit and integration tests support optional coverage collection via
 //! `cargo-llvm-cov`.
@@ -17,7 +18,7 @@ use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
 use xshell::{Shell, cmd};
 
-use crate::common::{BuildProfile, find_brush_binary, find_workspace_root};
+use crate::common::{BuildProfile, find_build_dir, find_target_dir};
 
 /// Integration test binaries that are excluded from unit tests.
 /// These tests execute the brush binary and are slower.
@@ -65,8 +66,9 @@ impl BinaryArgs {
     }
 
     /// Find the brush binary using these arguments.
+    #[cfg(unix)]
     pub fn find_brush_binary(&self) -> Result<PathBuf> {
-        find_brush_binary(self.brush_path.as_ref(), self.effective_profile())
+        crate::common::find_brush_binary(self.brush_path.as_ref(), self.effective_profile())
     }
 }
 
@@ -97,9 +99,30 @@ pub enum TestSubcommand {
     /// the brush binary (compat tests, interactive tests, completion tests).
     Integration(IntegrationTestArgs),
 
-    /// Run external test suites.
-    #[clap(subcommand)]
-    External(ExternalTestCommand),
+    /// Run containerized end-to-end tests against real applications.
+    #[cfg(unix)]
+    E2e(crate::e2e::E2eArgs),
+
+    /// Copy the `brush-*-tests` binaries from an earlier cargo build into a
+    /// directory, so they can be shipped to and run on other machines.
+    ///
+    /// Reads the JSON messages that build emitted (`--message-format=json`)
+    /// to learn where cargo put each binary; the target directory's layout
+    /// isn't stable across cargo versions.
+    CollectBinaries(CollectBinariesArgs),
+}
+
+/// Arguments for collecting test binaries.
+#[derive(Args, Clone)]
+pub struct CollectBinariesArgs {
+    /// File holding the output of a `cargo build --message-format=json` run.
+    #[clap(long)]
+    pub cargo_messages: PathBuf,
+
+    /// Directory to copy the binaries into, named after their test targets.
+    /// Created if it doesn't exist.
+    #[clap(long)]
+    pub output_dir: PathBuf,
 }
 
 /// Arguments for unit tests.
@@ -122,17 +145,19 @@ pub struct IntegrationTestArgs {
     #[clap(long)]
     pub results_output: Option<PathBuf>,
 
-    /// Build and test against a wasm32-wasip2 target under a WASI runtime
-    /// (wasmtime by default). Builds brush for wasm32-wasip2 with minimal
+    /// Build and test against a wasm32-wasip3 target under a WASI runtime
+    /// (wasmtime by default). Builds brush for wasm32-wasip3 with its default
     /// features, then runs a subset of integration tests (excluding compat,
-    /// interactive, and completion suites) under the WASI launcher.
+    /// interactive, and completion suites) under the WASI launcher. Needs a
+    /// toolchain with the wasm32-wasip3 target (Rust 1.100+, or nightly) and
+    /// a runtime with WASI 0.3 support (e.g., wasmtime 46+).
     #[clap(long)]
     pub wasi: bool,
 
     /// Launcher command for the WASI runtime (only used with --wasi).
     /// The first token is resolved against `PATH`; subsequent tokens are
     /// passed as leading arguments before the brush binary path.
-    /// Defaults to `wasmtime run --dir=.::/ --allow-precompiled --`.
+    /// Defaults to `wasmtime run -S inherit-env --dir=.::/ --allow-precompiled --`.
     #[clap(long)]
     pub wasi_launcher: Option<String>,
 
@@ -155,60 +180,6 @@ pub struct CoverageArgs {
     pub coverage_output: PathBuf,
 }
 
-/// External test suite commands.
-#[derive(Subcommand, Clone)]
-pub enum ExternalTestCommand {
-    /// Run the bash-completion test suite against brush.
-    BashCompletion(BashCompletionArgs),
-    /// Run the upstream bash test suite against brush.
-    #[cfg(unix)]
-    BashTests(crate::bash_tests::BashTestsArgs),
-}
-
-/// Arguments for bash-completion test suite.
-#[derive(Args, Clone)]
-pub struct BashCompletionArgs {
-    /// Path to the bash-completion repository checkout.
-    #[clap(long)]
-    bash_completion_path: PathBuf,
-
-    /// List available tests without running them.
-    #[clap(long)]
-    list: bool,
-
-    /// Filter tests by name pattern (passed to pytest -k).
-    /// Supports pytest expression syntax, e.g., `"test_alias"`, `"test_alias and test_1"`.
-    #[clap(long, short = 't')]
-    test_filter: Option<String>,
-
-    /// Run only specific test file(s). Can be specified multiple times.
-    /// Example: `-f test_alias.py -f test_bash.py`
-    #[clap(long, short = 'f')]
-    file: Vec<String>,
-
-    /// Stop on first test failure.
-    #[clap(long, short = 'x')]
-    stop_on_first: bool,
-
-    /// Output file for JSON test results.
-    #[clap(long, short = 'o')]
-    output: Option<PathBuf>,
-
-    /// Output file for markdown summary report.
-    #[clap(long)]
-    summary_output: Option<PathBuf>,
-
-    /// Path to the summarize-pytest-results.py script (for generating summary).
-    /// Defaults to ./scripts/summarize-pytest-results.py relative to workspace root.
-    #[clap(long)]
-    summary_script: Option<PathBuf>,
-
-    /// Number of parallel test workers (requires pytest-xdist).
-    /// Use -j 1 to disable parallel execution.
-    #[clap(long, short = 'j', default_value_t = 128)]
-    jobs: u32,
-}
-
 /// Run a test command.
 pub fn run(cmd: &TestCommand, verbose: bool) -> Result<()> {
     let sh = Shell::new()?;
@@ -218,25 +189,83 @@ pub fn run(cmd: &TestCommand, verbose: bool) -> Result<()> {
         TestSubcommand::Integration(args) => {
             run_integration_tests(&sh, &cmd.binary_args, args, verbose)
         }
-        TestSubcommand::External(ext_cmd) => run_external(ext_cmd, &cmd.binary_args, &sh, verbose),
+        #[cfg(unix)]
+        TestSubcommand::E2e(args) => crate::e2e::run(&cmd.binary_args, args, verbose),
+        TestSubcommand::CollectBinaries(args) => collect_test_binaries(args),
     }
 }
 
-fn run_external(
-    cmd: &ExternalTestCommand,
-    binary_args: &BinaryArgs,
-    sh: &Shell,
-    verbose: bool,
-) -> Result<()> {
-    match cmd {
-        ExternalTestCommand::BashCompletion(args) => {
-            run_bash_completion_tests(sh, args, binary_args, verbose)
+/// The subset of a cargo JSON message that [`find_test_binaries`] reads.
+#[derive(serde::Deserialize)]
+struct CargoMessage {
+    reason: String,
+    target: Option<CargoTarget>,
+    executable: Option<PathBuf>,
+}
+
+#[derive(serde::Deserialize)]
+struct CargoTarget {
+    name: String,
+    kind: Vec<String>,
+}
+
+/// Returns `(target name, executable path)` for each `brush-*-tests` test
+/// target in a stream of cargo JSON messages.
+fn find_test_binaries(messages: &str) -> Result<Vec<(String, PathBuf)>> {
+    let mut found = vec![];
+    for line in messages.lines() {
+        let msg: CargoMessage =
+            serde_json::from_str(line).with_context(|| format!("bad cargo message: {line}"))?;
+        if msg.reason != "compiler-artifact" {
+            continue;
         }
-        #[cfg(unix)]
-        ExternalTestCommand::BashTests(args) => {
-            crate::bash_tests::run_bash_tests(args, binary_args, verbose)
+        if let (Some(target), Some(exe)) = (msg.target, msg.executable) {
+            if target.kind == ["test"]
+                && target.name.starts_with("brush-")
+                && target.name.ends_with("-tests")
+            {
+                found.push((target.name, exe));
+            }
         }
     }
+    Ok(found)
+}
+
+/// Copy the test binaries named in a cargo build's JSON messages into a directory.
+fn collect_test_binaries(args: &CollectBinariesArgs) -> Result<()> {
+    let messages = std::fs::read_to_string(&args.cargo_messages)
+        .with_context(|| format!("failed to read {}", args.cargo_messages.display()))?;
+    let binaries = find_test_binaries(&messages)?;
+    if binaries.is_empty() {
+        anyhow::bail!(
+            "no brush-*-tests binaries in {}",
+            args.cargo_messages.display()
+        );
+    }
+
+    // Only copy files from cargo's build dir, so a stray or tampered message
+    // can't make this ship arbitrary files.
+    let build_dir = find_build_dir()?.canonicalize()?;
+    std::fs::create_dir_all(&args.output_dir)?;
+    for (name, exe) in binaries {
+        let exe = exe
+            .canonicalize()
+            .with_context(|| format!("failed to resolve {}", exe.display()))?;
+        if !exe.is_file() || !exe.starts_with(&build_dir) {
+            anyhow::bail!(
+                "{} is not a file under the build dir ({})",
+                exe.display(),
+                build_dir.display()
+            );
+        }
+
+        let dest = args
+            .output_dir
+            .join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
+        eprintln!("{} -> {}", exe.display(), dest.display());
+        std::fs::copy(&exe, &dest).with_context(|| format!("failed to copy {}", exe.display()))?;
+    }
+    Ok(())
 }
 
 /// Run unit tests (excludes integration test binaries).
@@ -277,7 +306,7 @@ pub fn run_unit_tests(
 ///
 /// This runs all tests in the workspace, including integration tests
 /// that execute the brush binary. With `--wasi`, builds brush for
-/// wasm32-wasip2 and runs the integration tests under a WASI runtime.
+/// wasm32-wasip3 and runs the integration tests under a WASI runtime.
 pub fn run_integration_tests(
     sh: &Shell,
     binary_args: &BinaryArgs,
@@ -324,7 +353,7 @@ pub fn run_integration_tests(
     test_result
 }
 
-/// Run the brush integration tests against a wasm32-wasip2 build of brush,
+/// Run the brush integration tests against a wasm32-wasip3 build of brush,
 /// executed under a WASI runtime. Builds the wasm module first unless
 /// `--skip-wasi-build` is given, then runs the integration tests via nextest
 /// with the appropriate environment variables populated for the test harness.
@@ -338,18 +367,15 @@ fn run_integration_tests_wasi(
 
     // Build the wasm module unless the caller opts out.
     if !args.skip_wasi_build {
-        eprintln!("Building brush for wasm32-wasip2...");
+        eprintln!("Building brush for wasm32-wasip3...");
         let mut build_args = vec![
             "build",
             "--target",
-            "wasm32-wasip2",
+            "wasm32-wasip3",
             "-p",
             "brush-shell",
             "--bin",
             "brush",
-            "--no-default-features",
-            "--features",
-            "minimal",
         ];
         if is_release {
             build_args.push("--release");
@@ -359,14 +385,13 @@ fn run_integration_tests_wasi(
         }
         cmd!(sh, "cargo {build_args...}")
             .run()
-            .context("failed to build brush for wasm32-wasip2")?;
+            .context("failed to build brush for wasm32-wasip3")?;
     }
 
     // Locate the wasm module that was (or should have been) produced.
-    let workspace_root = find_workspace_root()?;
     let profile_dir = if is_release { "release" } else { "debug" };
-    let wasm_path = workspace_root
-        .join("target/wasm32-wasip2")
+    let wasm_path = find_target_dir()?
+        .join("wasm32-wasip3")
         .join(profile_dir)
         .join("brush.wasm");
     let wasm_path = wasm_path.canonicalize().with_context(|| {
@@ -395,11 +420,13 @@ fn run_integration_tests_wasi(
     }
 
     // The default launcher includes --allow-precompiled so wasmtime accepts
-    // the AOT-compiled .cwasm module without re-compilation.
+    // the AOT-compiled .cwasm module without re-compilation, and
+    // `-S inherit-env` so the environment the harness sets for each test
+    // case reaches brush.
     let launcher = args
         .wasi_launcher
         .as_deref()
-        .unwrap_or("wasmtime run --dir=.::/ --allow-precompiled --");
+        .unwrap_or("wasmtime run -S inherit-env --dir=.::/ --allow-precompiled --");
 
     eprintln!("Running brush integration tests under WASI...");
     eprintln!("  wasm:     {}", cwasm_path.display());
@@ -452,8 +479,7 @@ fn run_nextest(
 
 /// Copy the nextest `JUnit` XML results to the given output path.
 fn copy_nextest_results(output: &Path) -> Result<()> {
-    let workspace_root = find_workspace_root()?;
-    let source = workspace_root.join("target/nextest/default/test-results.xml");
+    let source = find_target_dir()?.join("nextest/default/test-results.xml");
     std::fs::copy(&source, output).with_context(|| {
         format!(
             "Failed to copy nextest results from {} to {}",
@@ -536,6 +562,25 @@ fn run_tests_with_coverage(
         eprintln!("Tests failed, but continuing to generate coverage report...");
     }
 
+    // Tests (e.g. umask cases) may leave coverage data files unreadable by their owner, which
+    // makes `llvm-profdata merge` fail. Make sure we can read and write them.
+    // Use the location cargo-llvm-cov told us about rather than assuming a directory layout.
+    let profraw_dir = env_output
+        .lines()
+        .filter_map(|line| line.strip_prefix("export "))
+        .filter_map(|rest| rest.split_once('='))
+        .find(|(k, _)| *k == "LLVM_PROFILE_FILE")
+        .and_then(|(_, v)| {
+            Path::new(v.trim_matches(['"', '\'']))
+                .parent()
+                .map(Path::to_path_buf)
+        });
+    if let Some(dir) = profraw_dir {
+        if let Err(e) = make_profraw_files_owner_accessible(&dir) {
+            eprintln!("Warning: failed to fix permissions on coverage data: {e}");
+        }
+    }
+
     // Generate coverage report (always attempt this)
     eprintln!("Generating coverage report...");
     if verbose {
@@ -559,197 +604,60 @@ fn run_tests_with_coverage(
     Ok(())
 }
 
-/// List available bash-completion tests without running them.
-fn list_bash_completion_tests(sh: &Shell, args: &BashCompletionArgs, verbose: bool) -> Result<()> {
-    eprintln!("Collecting bash-completion tests...");
+/// Recursively ensures that `*.profraw` files under `dir` are readable and writable by their
+/// owner. A missing directory is not an error.
+#[cfg(unix)]
+fn make_profraw_files_owner_accessible(dir: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt as _;
 
-    // Determine test targets - specific files or all tests
-    let test_targets: Vec<String> = if args.file.is_empty() {
-        vec!["./t".to_string()]
-    } else {
-        args.file
-            .iter()
-            .map(|f| {
-                if f.starts_with("./t/") || f.starts_with("t/") {
-                    f.clone()
-                } else {
-                    format!("./t/{f}")
-                }
-            })
-            .collect()
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Ok(());
     };
 
-    let mut pytest_args = vec!["--collect-only".to_string(), "-q".to_string()];
-
-    // Add test filter if specified
-    if let Some(filter) = &args.test_filter {
-        pytest_args.push("-k".to_string());
-        pytest_args.push(filter.clone());
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+        if entry.file_type()?.is_dir() {
+            make_profraw_files_owner_accessible(&path)?;
+        } else if path.extension().is_some_and(|ext| ext == "profraw") {
+            let mut perms = std::fs::metadata(&path)?.permissions();
+            perms.set_mode(perms.mode() | 0o600);
+            std::fs::set_permissions(&path, perms)?;
+        }
     }
-
-    // Add test targets
-    pytest_args.extend(test_targets);
-
-    if verbose {
-        eprintln!("Running: pytest {}", pytest_args.join(" "));
-    }
-
-    // Run pytest --collect-only and display results
-    cmd!(sh, "pytest").args(&pytest_args).run()?;
 
     Ok(())
 }
 
-/// Run the bash-completion project's test suite against brush.
-///
-/// This runs pytest on the bash-completion test suite with brush as the shell,
-/// configured via the `BASH_COMPLETION_TEST_BASH` environment variable.
-/// Results are output as JSON and optionally summarized to markdown.
-///
-/// Requires:
-/// - A checkout of the bash-completion repository
-/// - Python with pytest, pytest-xdist, and pytest-json-report installed
-fn run_bash_completion_tests(
-    sh: &Shell,
-    args: &BashCompletionArgs,
-    binary_args: &BinaryArgs,
-    verbose: bool,
-) -> Result<()> {
-    // Find the brush binary (use explicit path or auto-detect from target dir)
-    let brush_path = binary_args.find_brush_binary()?;
-
-    let test_dir = args.bash_completion_path.join("test");
-    if !test_dir.exists() {
-        anyhow::bail!(
-            "bash-completion test directory not found at: {}",
-            test_dir.display()
-        );
-    }
-
-    // Build the pytest command
-    let dir_guard = sh.push_dir(&test_dir);
-
-    // Set environment variable for the test suite
-    let brush_path_str = brush_path.display().to_string();
-    let _env = sh.push_env(
-        "BASH_COMPLETION_TEST_BASH",
-        format!("{brush_path_str} --noprofile --no-config --input-backend=basic"),
-    );
-
-    // Handle --list mode: just collect and display tests
-    if args.list {
-        return list_bash_completion_tests(sh, args, verbose);
-    }
-
-    eprintln!("Running bash-completion test suite...");
-    eprintln!("Using brush binary: {}", brush_path.display());
-
-    // Determine test targets - specific files or all tests
-    let test_targets: Vec<String> = if args.file.is_empty() {
-        vec!["./t".to_string()]
-    } else {
-        args.file
-            .iter()
-            .map(|f| {
-                if f.starts_with("./t/") || f.starts_with("t/") {
-                    f.clone()
-                } else {
-                    format!("./t/{f}")
-                }
-            })
-            .collect()
-    };
-
-    // Build pytest args
-    let mut pytest_args: Vec<String> = Vec::new();
-
-    // Add parallel execution flag if jobs > 1 (requires pytest-xdist)
-    if args.jobs > 1 {
-        pytest_args.push("-n".to_string());
-        pytest_args.push(args.jobs.to_string());
-    }
-
-    // Add JSON report if output is requested (requires pytest-json-report)
-    let json_output = args.output.as_ref().map(|p| p.display().to_string());
-    if let Some(ref output) = json_output {
-        pytest_args.push("--json-report".to_string());
-        pytest_args.push(format!("--json-report-file={output}"));
-    }
-
-    // Add optional flags
-    if verbose {
-        pytest_args.push("-v".to_string());
-    }
-    if args.stop_on_first {
-        pytest_args.push("-x".to_string());
-    }
-    if let Some(filter) = &args.test_filter {
-        pytest_args.push("-k".to_string());
-        pytest_args.push(filter.clone());
-    }
-
-    // Add test targets at the end
-    pytest_args.extend(test_targets);
-
-    if verbose {
-        eprintln!("Running: pytest {}", pytest_args.join(" "));
-    }
-
-    // Run pytest - pass stdout/stderr through directly, capture whether it failed.
-    let pytest_failed = cmd!(sh, "pytest").args(&pytest_args).run().is_err();
-
-    if pytest_failed {
-        eprintln!("Some tests failed, but continuing to generate reports...");
-    }
-
-    // Generate summary report if requested (requires JSON output)
-    if let (Some(summary_path), Some(output)) = (&args.summary_output, &json_output) {
-        // Get workspace root for script path resolution
-        let workspace_root = find_workspace_root()?;
-
-        let summary_path_str = summary_path.display().to_string();
-
-        // Determine the script path - use provided path or default to workspace root
-        let script_path = args
-            .summary_script
-            .clone()
-            .unwrap_or_else(|| workspace_root.join("scripts/summarize-pytest-results.py"));
-
-        let script_path_str = script_path.display().to_string();
-
-        // Go back to original directory for the script (if we were in test dir)
-        drop(dir_guard);
-
-        let title = "Test Summary: bash-completion test suite";
-        if verbose {
-            eprintln!("Running: python3 {script_path_str} -r {output} --title \"{title}\"");
-        }
-        let summary_result = cmd!(sh, "python3 {script_path_str}")
-            .args(["-r", output, "--title", title])
-            .read();
-
-        match summary_result {
-            Ok(summary) => {
-                sh.write_file(summary_path, &summary)?;
-                eprintln!("Summary report written to: {summary_path_str}");
-            }
-            Err(e) => {
-                eprintln!("Warning: Failed to generate summary report: {e}");
-            }
-        }
-    } else if args.summary_output.is_some() && json_output.is_none() {
-        eprintln!("Warning: --summary-output requires --output for JSON results");
-    }
-
-    eprintln!("bash-completion test suite completed.");
-    if let Some(ref output) = json_output {
-        eprintln!("Results written to: {output}");
-    }
-
-    // Propagate test failure after reports are generated
-    if pytest_failed {
-        anyhow::bail!("bash-completion tests failed (reports were still generated)");
-    }
-
+#[cfg(not(unix))]
+#[allow(
+    clippy::missing_const_for_fn,
+    clippy::unnecessary_wraps,
+    reason = "must match the signature of the unix implementation"
+)]
+fn make_profraw_files_owner_accessible(_dir: &Path) -> Result<()> {
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_find_test_binaries() {
+        let messages = [
+            r#"{"reason":"compiler-artifact","target":{"name":"brush-compat-tests","kind":["test"]},"executable":"/t/a"}"#,
+            r#"{"reason":"compiler-artifact","target":{"name":"pty_startup_tests","kind":["test"]},"executable":"/t/b"}"#,
+            r#"{"reason":"compiler-artifact","target":{"name":"brush-shell","kind":["bin"]},"executable":"/t/c"}"#,
+            r#"{"reason":"compiler-artifact","target":{"name":"brush-core","kind":["lib"]},"executable":null}"#,
+            r#"{"reason":"build-finished","success":true}"#,
+        ]
+        .join("\n");
+
+        assert_eq!(
+            find_test_binaries(&messages).unwrap(),
+            [("brush-compat-tests".to_owned(), PathBuf::from("/t/a"))]
+        );
+        assert!(find_test_binaries("not json").is_err());
+    }
 }

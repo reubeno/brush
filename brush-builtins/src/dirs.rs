@@ -1,4 +1,3 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins};
@@ -9,6 +8,10 @@ pub(crate) enum DirError {
     #[error("directory stack is empty")]
     DirStackEmpty,
 
+    /// There is no other directory to exchange with the current one.
+    #[error("no other directory")]
+    NoOtherDirectory,
+
     /// A shell error occurred.
     #[error(transparent)]
     ShellError(#[from] brush_core::Error),
@@ -17,7 +20,7 @@ pub(crate) enum DirError {
 impl From<&DirError> for brush_core::ExecutionExitCode {
     fn from(value: &DirError) -> Self {
         match value {
-            DirError::DirStackEmpty => Self::GeneralError,
+            DirError::DirStackEmpty | DirError::NoOtherDirectory => Self::GeneralError,
             DirError::ShellError(e) => e.into(),
         }
     }
@@ -26,7 +29,8 @@ impl From<&DirError> for brush_core::ExecutionExitCode {
 impl brush_core::BuiltinError for DirError {}
 
 /// Manage the current directory stack.
-#[derive(Default, Parser)]
+#[derive(Default, winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct DirsCommand {
     /// Clear the directory stack.
     #[arg(short = 'c')]
@@ -43,15 +47,16 @@ pub(crate) struct DirsCommand {
     /// Print one directory per line with its index.
     #[arg(short = 'v')]
     print_one_per_line_with_index: bool,
-    //
     // TODO(dirs): implement +N and -N
 }
 
-impl builtins::Command for DirsCommand {
+brush_winnow_args_adapter::impl_parse_args!(DirsCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DirsCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.clear {

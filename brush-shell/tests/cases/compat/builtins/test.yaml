@@ -355,3 +355,36 @@ cases:
       # All should have the same result
       [ $r1 -eq $r2 ] && [ $r2 -eq $r3 ] && [ $r3 -eq $r4 ] && echo "All -t results match"
 
+
+  - name: "test with a non-integer operand fails with status 2"
+    ignore_stderr: true
+    stdin: |
+      test 1 -eq a
+      echo "test: $?"
+      [ 1 -lt b ]
+      echo "[: $?"
+
+  - name: "test reports a non-integer operand anywhere in the expression"
+    ignore_stderr: true
+    stdin: |
+      [ "" -eq 0 ]; echo "empty: $?"
+      [ 1x -gt 0 ]; echo "trailing junk: $?"
+      [ "1 2" -ne 1 ]; echo "two numbers: $?"
+      [ 99999999999999999999 -ge 1 ]; echo "too large: $?"
+      [ ! abc -le 1 ]; echo "negated: $?"
+      [ 1 -eq 1 -o abc -eq 1 ]; echo "or: $?"
+      [ 1 -eq 2 -a abc -eq 1 ]; echo "and: $?"
+      [ abc -eq 1 ] || echo "or list: $?"
+      [ " 12 " -eq 12 ] && [ -3 -lt +3 ] && echo "valid operands still work"
+
+  - name: "test and [ take words that look like options as operands"
+    stdin: |
+      test --; echo "a=$?"
+      test -n --; echo "b=$?"
+      test -- = --; echo "c=$?"
+      test --help; echo "d=$?"
+      test -h; echo "e=$?"
+      [ -- ]; echo "f=$?"
+      [ --help ]; echo "g=$?"
+      [ ! -- ]; echo "h=$?"
+      [ -1 -lt 0 ]; echo "i=$?"

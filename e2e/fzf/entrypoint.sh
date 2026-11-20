@@ -3,7 +3,7 @@
 # results go to /results (junit XML + full log); exit status = test status.
 set -uo pipefail
 mkdir -p /results
-cd /fzf
+cd /fzf || exit 1
 tmux new-session -d
 # Turn skip-list.txt into a minitest --exclude regex.
 skips=$(grep -v '^\s*\(#\|$\)' /e2e/skip-list.txt | paste -sd'|')
@@ -12,4 +12,4 @@ exclude="^(TestZsh|TestFish|TestNushell)#"
 [[ -n $skips ]] && exclude="$exclude|^($skips)$"
 ruby -Itest test/test_shell_integration.rb --verbose --exclude "/$exclude/" \
     --ci-report --ci-dir /results/junit "$@" 2>&1 | tee /results/log.txt
-exit $?
+exit "${PIPESTATUS[0]}"

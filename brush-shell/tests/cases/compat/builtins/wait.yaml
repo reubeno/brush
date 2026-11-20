@@ -50,3 +50,127 @@ cases:
       pid=$!
       wait $pid
       echo "status: $?"
+
+  - name: "wait %job returns the job's status"
+    ignore_stderr: true # brush also prints "[1]+Done" for the job; see the next case
+    stdin: |
+      set -m
+      { sleep 0.2; exit 3; } &
+      wait %1
+      echo "status: $?"
+
+  - name: "wait for several jobs returns the last one's status"
+    stdin: |
+      { sleep 0.2; exit 3; } &
+      { sleep 0.3; exit 4; } &
+      wait %1 %2
+      echo "status: $?"
+      { sleep 0.1; exit 5; } &
+      wait %1
+      echo "status: $?"
+      echo "still here"
+
+  - name: "wait %job for a job that already finished"
+    known_failure: true # TODO(jobs): brush prints "[1]+Done" for a finished job and drops it before wait sees it
+    stdin: |
+      set -m
+      (exit 3) &
+      sleep 0.1
+      wait %1
+      echo "status: $?"
+
+  - name: "wait for a job that doesn't exist fails with status 127"
+    known_failure: true # TODO(wait): wait with job specs not implemented
+    ignore_stderr: true
+    stdin: |
+      wait %9
+      echo "wait %9: $?"
+      wait -n
+      echo "wait -n: $?"
+
+  - name: "kill and wait take a job's $!"
+    known_failure: true # TODO(signals): a job's shell code isn't a process to wait for or signal
+    stdin: |
+      sleep 5 &
+      kill $!
+      wait $!
+      echo "status: $?"
+      { sleep 0.1; exit 3; } &
+      wait $!
+      echo "status: $?"
+
+  - name: "wait for a process that isn't the shell's child"
+    known_failure: true # TODO(signals): a job's shell code isn't a process to wait for or signal
+    ignore_stderr: true
+    stdin: |
+      wait 12345
+      echo "status: $?"
+      wait abc
+      echo "status: $?"
+
+  - name: "wait for a job's $! once it has finished"
+    known_failure: true # TODO(signals): a job's shell code isn't a process to wait for or signal
+    stdin: |
+      (exit 5) &
+      pid=$!
+      sleep 0.1
+      wait $pid
+      echo "status: $?"
+      wait $pid
+      echo "status: $?"
+
+  - name: "wait %job for a job killed before it"
+    known_failure: true # TODO(signals): a job's shell code isn't a process to wait for or signal
+    stdin: |
+      n=0; while [ "$n" -lt 20 ]; do sleep 0.1; n=$((n + 1)); done &
+      kill %1
+      sleep 0.2
+      wait %1
+      echo "status: $?"
+
+  # bash runs `cmd &` in the job's own process: a signal to its `$!` or `%job` reaches the
+  # program alone, and `wait` reports what the program did with it.
+  - name: "a job's program that handles the signal sent to its $! is waited for"
+    skip: true # TODO(signals): hangs: a wait for a job's program never returns
+    stdin: |
+      sh -c 'trap "exit 0" TERM; echo ready > ready; while :; do sleep 0.05; done' &
+      while [ ! -s ready ]; do sleep 0.05; done
+      kill $!
+      wait $!
+      echo "status: $?"
+      rm ready
+
+  - name: "a job's program that handles the signal sent to its job spec is waited for"
+    skip: true # TODO(signals): hangs: a wait for a job's program never returns
+    stdin: |
+      sh -c 'trap "exit 0" TERM; echo ready > ready; while :; do sleep 0.05; done' &
+      while [ ! -s ready ]; do sleep 0.05; done
+      kill %1
+      wait %1
+      echo "status: $?"
+      rm ready
+
+  # The program notes each signal in a file; it's told to finish once it has noted one.
+  - name: "a job's program gets a signal sent to its $! once, and the job goes on"
+    known_failure: true # TODO(signals): a job's shell code isn't a process to wait for or signal
+    stdin: |
+      sh -c 'trap "echo got >> got.txt" USR1; echo ready > ready; until [ -e go ]; do sleep 0.05; done' &
+      while [ ! -s ready ]; do sleep 0.05; done
+      kill -USR1 $!
+      n=0; until [ -s got.txt ] || [ $n -ge 60 ]; do sleep 0.05; n=$((n + 1)); done
+      touch go
+      wait $!
+      echo "status: $?"
+      cat got.txt
+      rm ready go got.txt
+
+  # The child ends as soon as it has signaled, so its CHLD trap may run with the USR1 trap:
+  # the signal that interrupted the wait still gives the status.
+  - name: "wait interrupted by a trapped signal as a child ends returns the signal's status"
+    known_failure: true # TODO(signals): a job's shell code isn't a process to wait for or signal
+    stdin: |
+      trap ':' USR1
+      trap ':' CHLD
+      { sleep 0.2; kill -USR1 $$; } &
+      wait
+      echo "wait: $?"

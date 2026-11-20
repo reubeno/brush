@@ -46,6 +46,47 @@ cases:
     stdin: |
       echo `echo \\`
 
+  - name: "Backtick command substitution with trailing backslashes"
+    stdin: |
+      y=`printf %s \\`
+      printf 'two: <%s> len=%s\n' "$y" "${#y}"
+      y=`printf %s \\\\`
+      printf 'four: <%s> len=%s\n' "$y" "${#y}"
+      y=`printf %s \\\\\\`
+      printf 'six: <%s> len=%s\n' "$y" "${#y}"
+
+  - name: "Backtick command substitution escape rules"
+    stdin: |
+      HOME=abc
+      printf '<%s>\n' `printf '%s\n' \\\\2`
+      echo `echo \$HOME`
+      echo `echo \\$HOME`
+      echo `echo \"q\"`
+      echo `echo 'a\"b'`
+
+  - name: "Backtick command substitution escape rules in double quotes"
+    stdin: |
+      HOME=abc
+      echo "`echo \\\\a`"
+      echo "`echo \$HOME \\$HOME`"
+      y=
+      echo "${y:-`echo \"q\"`}"
+
+  - name: "Backtick command substitution unescaping double quotes in double quotes"
+    known_failure: true # TODO(parser): in backquotes directly within double quotes (not in a `${...}` within them), a backslash before `"` is removed
+    stdin: |
+      echo "`echo \"q\"`"
+      echo "`echo 'a\"b'`"
+
+  - name: "Backtick command substitution line continuations"
+    stdin: |
+      echo `echo e\
+      cho`
+      echo `echo 'a\
+      b'`
+      echo "`echo 'a\
+      b'`"
+
   - name: "Backtick command substitution in double quotes"
     stdin: |
       echo "`echo First line`"
@@ -251,3 +292,119 @@ cases:
 
       $($(:))
       echo "exit code: $?"
+
+  - name: "Syntax error inside command substitution"
+    known_failure: true # TODO(parser): the substituted command isn't parsed until it runs, so bash's syntax error (which ends the script) becomes a failed substitution
+    ignore_stderr: true
+    stdin: |
+      x="[$(if)]"
+      echo "rc=$? x=$x"
+
+  - name: "Case statement with unparenthesized pattern in command substitution"
+    known_failure: true # TODO(tokenizer): #1052: the ')' ending a case pattern is taken as closing the '$('
+    stdin: |
+      echo "$(case x in x) echo matched;; esac)"
+
+  - name: "Case statement with unparenthesized pattern in command substitution in here doc"
+    known_failure: true # TODO(tokenizer): #1052: the ')' ending a case pattern is taken as closing the '$('
+    stdin: |
+      cat <<EOF
+      $(case x in x) echo matched;; esac)
+      EOF
+
+  - name: "Command substitution with embedded extglob"
+    stdin: |
+      shopt -s extglob
+      touch abc abd xyz
+      echo "$(echo @(abc|xyz))"
+      echo $(echo !(ab*))
+
+  - name: "Command substitution with quoted paren in extglob"
+    stdin: |
+      shopt -s extglob
+      echo @(")") @(a|')'|b)x @(\))
+      echo $(printf "%s" @(")"))
+      echo "$(echo @(a|")"|b)x)"
+      echo @($'\'')x @($'a\')'|b) @(\$'a\')x @($")")x
+      echo $(echo @($'\'')x)
+      echo @($$'a\')x @($$$'\'')x | sed "s/$$/PID/g"
+
+  - name: "Extglob containing backquotes or command substitution in quotes"
+    stdin: |
+      shopt -s extglob
+      echo @(`echo ")"`)x @(`echo "("`)x
+      echo @("$(echo ")")")x @("`echo "\)"`")x
+      echo $(echo @(`echo ")"`)x)
+
+  - name: "Extglob containing parameter expansion with blanks in quotes"
+    stdin: |
+      shopt -s extglob
+      case 'a  b' in @("${u:-a  b}")) echo match;; *) echo no match;; esac
+
+  - name: "Extglob containing dollar and single quote in double quotes"
+    stdin: |
+      shopt -s extglob
+      v="\$'x'"
+      case "$v" in @("$'x'")) echo match;; *) echo no match;; esac
+
+  - name: "Escaped backslash in backquoted command"
+    stdin: |
+      shopt -s extglob
+      echo `echo \\"`
+      echo @(`echo \\"`)x
+
+  - name: "Extglob containing backquoted command that fails"
+    ignore_stderr: true
+    stdin: |
+      shopt -s extglob
+      echo @(}`'`)x
+      echo @(`$'\'`)x
+
+  - name: "Extglob with unquoted command substitution containing a comment"
+    # As in bash, an unquoted `$(` in an extglob isn't parsed as a command; its parens
+    # just count toward the nesting, so the `)` in the comment matters.
+    ignore_stderr: true
+    stdin: |
+      shopt -s extglob
+      echo @($(echo x # )
+      ))y
+      echo "not reached"
+
+  - name: "Extglob with unterminated construct inside quotes"
+    ignore_stderr: true
+    stdin: |
+      shopt -s extglob
+      echo @("$(\$"\))x
+      echo "not reached"
+
+  - name: "Single quote after escaped or doubled dollar sign"
+    stdin: |
+      echo \$'a\'x
+      echo $$'a\'x | sed "s/$$/PID/g"
+
+  - name: "Extglob containing backquoted command with close paren"
+    stdin: |
+      shopt -s extglob
+      touch x
+      echo $(echo @(`case x in x) echo x;; esac`))
+
+  - name: "Pathname expansion of extglob containing backquoted command"
+    known_failure: true # TODO(patterns): extglobs containing an expansion never match
+    stdin: |
+      shopt -s extglob
+      touch x
+      echo @(`case x in x) echo x;; esac`)
+
+  - name: "Large builtin output after a nested command substitution"
+    stdin: |
+      s=x; for i in {1..17}; do s=$s$s; done
+      for i in {1..20}; do v=$(echo "$(true)$s"); done
+      echo "${#v}"
+
+  - name: "Function substitution"
+    known_failure: true # TODO(expansion): #931: ${ cmd; } (bash 5.3) is not implemented
+    stdin: |
+      ${ false; }
+      echo "rc=$?"
+      x=${ echo hi; }
+      echo "x=$x"

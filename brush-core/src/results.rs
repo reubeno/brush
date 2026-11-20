@@ -1,12 +1,13 @@
 //! Encapsulation of execution results.
 
-#[cfg(unix)]
+#[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
 use std::os::unix::process::ExitStatusExt;
 
-use crate::{error, processes};
+use crate::{error, processes, tasks};
 
 /// Represents the result of executing a command or similar item.
 #[derive(Default)]
+#[must_use]
 pub struct ExecutionResult {
     /// The control flow transition to apply after execution.
     pub next_control_flow: ExecutionControlFlow,
@@ -88,6 +89,11 @@ impl ExecutionResult {
             ExecutionControlFlow::ReturnFromFunctionOrScript | ExecutionControlFlow::ExitShell
         )
     }
+
+    /// Returns whether the execution result indicates an exit from the shell.
+    pub const fn is_exit(&self) -> bool {
+        matches!(self.next_control_flow, ExecutionControlFlow::ExitShell)
+    }
 }
 
 impl From<ExecutionExitCode> for ExecutionResult {
@@ -116,7 +122,7 @@ impl From<std::process::Output> for ExecutionResult {
             return Self::new((code & 0xFF) as u8);
         }
 
-        #[cfg(unix)]
+        #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
         if let Some(signal) = output.status.signal() {
             #[expect(clippy::cast_sign_loss)]
             return Self::new((signal & 0xFF) as u8 + 128);
@@ -248,7 +254,7 @@ pub enum ExecutionSpawnResult {
     /// Indicates that a process was started and had not yet completed.
     StartedProcess(processes::ChildProcess),
     /// Indicates that a task was started to handle the execution asynchronously.
-    StartedTask(tokio::task::JoinHandle<Result<ExecutionResult, error::Error>>),
+    StartedTask(tasks::TaskHandle<Result<ExecutionResult, error::Error>>),
 }
 
 impl From<ExecutionResult> for ExecutionSpawnResult {
@@ -265,8 +271,8 @@ impl ExecutionSpawnResult {
                 // Wait for the process to exit or for a relevant signal, whichever happens
                 // first.
                 match child.wait().await? {
-                    processes::ProcessWaitResult::Completed(output) => {
-                        ExecutionWaitResult::Completed(ExecutionResult::from(output))
+                    processes::ProcessWaitResult::Completed(result) => {
+                        ExecutionWaitResult::Completed(result)
                     }
                     processes::ProcessWaitResult::Stopped => ExecutionWaitResult::Stopped(child),
                 }

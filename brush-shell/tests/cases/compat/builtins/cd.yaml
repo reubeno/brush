@@ -169,3 +169,56 @@ cases:
 
       echo "[5]"
       env | grep -o "^OLDPWD="
+
+  - name: "cd .. from a deleted directory"
+    known_failure: true # TODO(cd): `cd ..` fails from a working directory that's been deleted
+    stdin: |
+      start=$PWD
+      mkdir gone
+      cd gone
+      rmdir "${start}/gone"
+      cd ..; echo "status: $?"
+      [[ $PWD == "${start}" ]] && echo "back at the start" || echo "somewhere else"
+
+  - name: "cd --help prints help on stdout"
+    stdin: |
+      cd --help >/dev/null 2>&1; echo "rc=$?"
+      [[ -n $(cd --help 2>/dev/null) ]] && echo "help on stdout"
+      [[ -z $(cd --help 2>&1 >/dev/null) ]] && echo "nothing on stderr"
+
+  - name: "cd takes -- and both of -L and -P"
+    stdin: |
+      mkdir -- -d
+      cd -- -d && basename -- "$PWD"
+      cd -- /; pwd
+
+  - name: "cd takes the last of -L and -P"
+    stdin: |
+      mkdir real; ln -s real link
+      cd -LP link; basename -- "$PWD"; cd ..
+      cd -PL link; basename -- "$PWD"; cd ..
+
+  - name: "cd --help prints what help cd prints"
+    stdin: |
+      [[ "$(cd --help; echo .)" == "$(help cd; echo .)" ]] && echo "same"
+
+  - name: "cd -h is an invalid option and prints nothing on stdout"
+    stdin: |
+      x=$(cd -h 2>/dev/null); echo "rc=$? len=${#x}"
+      [[ -n $(cd -h 2>&1 >/dev/null) ]] && echo "error on stderr"
+
+  - name: "cd --help after an operand is an operand"
+    known_failure: true # TODO(cd): --help anywhere is taken as a request for help
+    ignore_stderr: true
+    stdin: |
+      cd /tmp --help; echo "rc=$?"
+
+  - name: "cd --help with stdout closed or read-only fails quietly"
+    stdin: |
+      { cd --help >&-; echo "rc=$?"; } 2>&1
+      { cd --help 1</dev/null; echo "rc=$?"; } 2>&1
+
+  - name: "cd --help with stdout full fails quietly"
+    incompatible_platforms: ["macos"] # no /dev/full
+    stdin: |
+      { cd --help >/dev/full; echo "rc=$?"; } 2>&1

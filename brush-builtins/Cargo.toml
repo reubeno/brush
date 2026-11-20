@@ -89,7 +89,7 @@ default = [
 'builtin.echo' = []
 'builtin.enable' = []
 'builtin.eval' = []
-'builtin.exec' = []
+'builtin.exec' = ['builtin.command']
 'builtin.exit' = []
 'builtin.export' = []
 'builtin.false' = []
@@ -128,16 +128,16 @@ default = [
 workspace = true
 
 [dependencies]
+brush-winnow-args-adapter = { version = "^0.1.0", path = "../brush-winnow-args-adapter" }
 brush-core = { version = "^0.5.0", path = "../brush-core" }
 brush-parser = { version = "^0.4.0", path = "../brush-parser" }
 cfg-if = "1.0.4"
-chrono = "0.4.44"
-clap = { version = "4.6.0", features = ["derive", "wrap_help"] }
-fancy-regex = "0.19.0"
-itertools = "0.14.0"
+fancy-regex = "0.20.0"
+itertools = "0.15.0"
 strum = "0.28.0"
 thiserror = "2.0.18"
 tracing = "0.1.44"
+winnow-args = { version = "0.6.0", default-features = false, features = ["derive", "help-text"] }
 utf8-chars = "3.0.6"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
@@ -153,7 +153,13 @@ tokio = { version = "1.52.3", features = [
     "signal",
     "sync",
 ] }
-uucore = { version = "0.10.0", default-features = false, features = ["format"] }
+uucore = { version = "0.12.0", default-features = false, features = [
+    "format",
+    "signals",
+] }
+
+[target.'cfg(target_os = "wasi")'.dependencies]
+uucore = { version = "0.12.0", default-features = false, features = ["format"] }
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31.2", features = [
@@ -167,7 +173,7 @@ nix = { version = "0.31.2", features = [
 rlimit = "0.11.0"
 
 [target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
-procfs = "0.18.0"
+procfs = { version = "0.18.0", default-features = false }
 
 [dev-dependencies]
 anyhow = "1.0.102"

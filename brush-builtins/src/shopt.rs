@@ -1,11 +1,11 @@
-use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
 
-use brush_core::{ExecutionExitCode, ExecutionResult, builtins};
+use brush_core::{ExecutionResult, builtins};
 
 /// Manage shopt-style options.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct ShoptCommand {
     /// Manage set -o options.
     #[arg(short = 'o')]
@@ -28,23 +28,27 @@ pub(crate) struct ShoptCommand {
     unset: bool,
 
     /// Names of options to operate on.
+    #[arg(positional)]
     options: Vec<String>,
 }
 
-impl builtins::Command for ShoptCommand {
+brush_winnow_args_adapter::impl_parse_args!(ShoptCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ShoptCommand {
     type Error = brush_core::Error;
 
     #[allow(clippy::too_many_lines)]
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.set && self.unset {
             writeln!(
                 context.stderr(),
-                "cannot set and unset shell options simultaneously"
+                "{}: cannot set and unset shell options simultaneously",
+                context.command_name
             )?;
-            return Ok(ExecutionExitCode::InvalidUsage.into());
+            return Ok(ExecutionResult::general_error());
         }
 
         if self.options.is_empty() {

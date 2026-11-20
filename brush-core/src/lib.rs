@@ -34,6 +34,7 @@ pub mod results;
 mod shell;
 pub mod sourceinfo;
 pub mod sys;
+pub mod tasks;
 pub mod terminal;
 pub mod tests;
 pub mod timing;
@@ -57,8 +58,8 @@ pub use interp::{ExecutionParameters, ProcessGroupPolicy};
 pub use parser::{SourcePosition, SourcePositionOffset, SourceSpan};
 pub use results::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, ExecutionSpawnResult};
 pub use shell::{
-    CreateOptions, ProfileLoadBehavior, RcLoadBehavior, Shell, ShellBuilder, ShellBuilderState,
-    ShellFd, ShellState,
+    CreateOptions, ProfileLoadBehavior, RcLoadBehavior, SavedCommandStatus, Shell, ShellBuilder,
+    ShellBuilderState, ShellFd, ShellState,
 };
 pub use sourceinfo::SourceInfo;
 pub use variables::{ShellValue, ShellVariable};

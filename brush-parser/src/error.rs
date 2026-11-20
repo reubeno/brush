@@ -2,6 +2,7 @@ use crate::tokenizer;
 
 /// Represents an error that occurred while parsing tokens.
 #[derive(thiserror::Error, Debug)]
+#[non_exhaustive]
 pub enum ParseError {
     /// A parsing error occurred near the given position.
     #[error("syntax error at line {} col {}", .0.line, .0.column)]
@@ -74,6 +75,7 @@ pub struct ParseErrorLocation {
 
 /// Represents an error that occurred while parsing a word.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum WordParseError {
     /// An error occurred while parsing an arithmetic expression.
     #[error("failed to parse arithmetic expression")]
@@ -107,6 +109,7 @@ pub struct TestCommandParseError(#[from] peg::error::ParseError<usize>);
 
 /// Represents an error that occurred while parsing a key-binding specification.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum BindingParseError {
     /// An unknown error occurred while parsing a key-binding specification.
     #[error("unknown error while parsing key-binding: '{0}'")]

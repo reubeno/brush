@@ -154,10 +154,119 @@ cases:
       false
       echo "total: $count"
 
+  - name: "A trap leaves PIPESTATUS as it found it"
+    known_failure: true # TODO(signals): PIPESTATUS isn't kept across a trap
+    stdin: |
+      trap 'true | false | true' USR1
+      true | false | false; kill -USR1 $$; echo "signal: ${PIPESTATUS[*]}"
+      trap 'true | true | true' ERR
+      true | false; echo "err: ${PIPESTATUS[*]}"
+
   - name: "trap ERR - has access to exit status"
     stdin: |
       trap 'echo "ERR with status: $?"' ERR
       (exit 42)
+      echo "after"
+
+  - name: "trap ERR - exit in the handler ends the shell"
+    stdin: |
+      trap 'echo "in ERR"; exit 3' ERR
+      false
+      echo "after"
+
+  - name: "trap ERR - exit in the handler sets the status under errexit"
+    stdin: |
+      set -e
+      trap 'echo "in ERR"; exit 3' ERR
+      false
+      echo "after"
+
+  - name: "trap ERR - exit in the handler ends the shell from a function"
+    stdin: |
+      set -E
+      trap 'echo "in ERR"; exit 3' ERR
+      f() { false; echo "in f"; }
+      f
+      echo "after"
+
+  - name: "trap ERR - exit with no status in the handler exits with the failed status"
+    stdin: |
+      trap 'exit' ERR
+      (exit 4)
+      echo "after"
+
+  - name: "trap ERR - return in the handler returns from the function"
+    stdin: |
+      set -E
+      trap 'return 7 2>/dev/null' ERR
+      f() { false; echo "in f"; }
+      f
+      echo "f: $?"
+      g() { (exit 5); echo "in g"; }
+      trap 'return 2>/dev/null' ERR
+      g
+      echo "g: $?"
+
+  - name: "trap ERR - break in the handler ends the loop"
+    known_failure: true # TODO(traps): a break or continue in the ERR trap handler is dropped
+    stdin: |
+      for i in 1 2; do
+        trap 'break' ERR
+        false
+        echo "i: $i"
+      done
+      echo "after: $?"
+
+  - name: "trap ERR - not run for exit"
+    stdin: |
+      trap 'echo "in ERR"' ERR
+      exit 3
+
+  - name: "trap ERR - with errtrace, runs once for a function that returns a failure"
+    stdin: |
+      set -E
+      trap 'echo "in ERR: $?"' ERR
+      f() { return 3; }
+      f
+      echo "f: $?"
+
+  - name: "trap ERR - runs for a pipeline whose last stage exits"
+    stdin: |
+      trap 'echo "in ERR: $?"' ERR
+      : | exit 3
+      : | { exit 4; }
+      f() { exit 5; }
+      : | f
+      echo "after: $?"
+
+  - name: "trap ERR - exit in the handler sets the status for a failed pipeline stage under errexit"
+    stdin: |
+      set -e
+      trap 'echo "in ERR"; exit 7' ERR
+      : | { false; }
+      echo "after"
+
+  - name: "trap ERR - exit in a pipeline stage's handler ends only the stage"
+    stdin: |
+      set -E
+      true | { trap 'exit 3' ERR; false; echo "not reached"; }
+      echo "after: $?"
+
+  - name: "trap ERR - return in a pipeline stage's handler ends only the stage"
+    stdin: |
+      set -E
+      f() {
+        true | { trap 'return 3' ERR; false; echo "not reached"; }
+        echo "in f: $?"
+      }
+      f
+      echo "f: $?"
+
+  - name: "trap ERR - exit in the last stage's handler ends the shell with lastpipe"
+    stdin: |
+      shopt -s lastpipe
+      set -E
+      true | { trap 'echo "in ERR"; exit 3' ERR; false; }
       echo "after"
 
   - name: "trap ERR - has access to BASH_COMMAND"
@@ -335,11 +444,13 @@ cases:
       trap -p INT &
       wait
 
+  # The job writes before it signals the shell: the trapped signal interrupts bash's `wait`,
+  # so anything the job wrote after it would race the shell's own output.
   - name: "background job does not fire inherited signal trap"
     known_failure: true # TODO(signals): background job signal handling
     stdin: |
       trap 'echo "[int]" >&2' INT
-      { kill -INT $$; echo "after kill"; } &
+      { echo "before kill"; kill -INT $$; } &
       wait
       echo "main done"
 
@@ -618,6 +729,24 @@ cases:
       x=1
       echo "x is $x"
 
+  #
+  # A shell substitutes an alias in the tokenizer, before the words are ever a command, so the
+  # trap sees the replacement and not the word the script wrote.
+  #
+  - name: "DEBUG trap - BASH_COMMAND reports the command after alias substitution"
+    stdin: |
+      shopt -s expand_aliases
+      alias greet='echo hello'
+      trap 'echo "cmd: $BASH_COMMAND"' DEBUG
+      greet there
+
+  - name: "DEBUG trap - output is not captured by the command's own redirection"
+    known_failure: true # TODO(traps): the DEBUG trap runs after the command's redirections are applied
+    stdin: |
+      trap 'echo "[debug: $BASH_COMMAND]"' DEBUG
+      echo hidden >/dev/null
+      echo visible
+
   - name: "DEBUG trap - sees LINENO"
     known_failure: true # TODO(traps): LINENO in DEBUG trap not accurate
     stdin: |
@@ -659,10 +788,31 @@ cases:
       echo "not reached"
 
   - name: "EXIT trap - can modify exit status"
-    known_failure: true # TODO(traps): EXIT trap exit doesn't modify status
     stdin: |
       trap 'exit 0' EXIT
       exit 99
+
+  - name: "EXIT trap - exit in the handler sets the status of a shell that ends normally"
+    stdin: |
+      trap 'echo "in EXIT"; exit 7' EXIT
+      echo "body"
+
+  - name: "EXIT trap - exit in the handler sets the status of a -c command"
+    args: ["-c", "trap 'echo \"in EXIT\"; exit 7' EXIT; exit 1"]
+
+  - name: "EXIT trap - exit in the handler sets the status of a script"
+    test_files:
+      - path: "script.sh"
+        contents: |
+          trap 'echo "in EXIT"; exit 7' EXIT
+          echo "body"
+    args: ["script.sh"]
+
+  - name: "EXIT trap - set by the ERR trap, its exit wins over the ERR trap's"
+    stdin: |
+      trap 'trap "echo in EXIT; exit 9" EXIT; exit 2' ERR
+      false
+      echo "after"
 
   - name: "EXIT trap - multiple assignments last one wins"
     stdin: |
@@ -733,3 +883,120 @@ cases:
       declare declared=$value
       printf '%s\n' "$value"
       trap - DEBUG
+
+  - name: "DEBUG trap - before each stage of a pipeline"
+    known_failure: true # TODO(pipeline): the DEBUG trap doesn't run before the commands of a pipeline of more than one command
+    stdin: |
+      trap 'echo "debug: $BASH_COMMAND"' DEBUG
+      true | false
+      echo done
+      trap - DEBUG
+
+  - name: "ERR trap with errtrace runs once for a subshell that exits"
+    stdin: |
+      set -E
+      trap 'echo "ERR $?"' ERR
+      f() { exit 3; }
+      (f)
+      echo "after: $?"
+
+  - name: "trap -p lists traps in bash's order"
+    skip: true # TODO(trap): traps are listed in hash order, which now and then happens to be bash's
+    stdin: |
+      trap 'echo r' RETURN
+      trap 'echo u' USR1
+      trap 'echo t' TERM
+      trap 'echo i' INT
+      trap 'echo x' EXIT
+      trap -p
+      trap - EXIT
+
+  - name: "ERR trap runs once for a failing brace group"
+    known_failure: true # TODO(trap): the ERR trap runs for the group and again for its last command
+    stdin: |
+      trap 'echo err' ERR
+      { false; }
+      if true; then false; fi
+      echo done
+
+  - name: "ERR trap runs twice for a failing subshell that ends a pipeline"
+    known_failure: true # TODO(trap): the ERR trap runs once, not twice, when a pipeline's last stage is a failing subshell
+    stdin: |
+      trap 'echo "err $?"' ERR
+      : | ( exit 3 )
+      echo "status: $?"
+      set -E
+      : | ( exit 4 )
+      echo "status: $?"
+
+  - name: "ERR trap set inside a function runs there"
+    known_failure: true # TODO(trap): an ERR trap set in a function body doesn't fire in it
+    stdin: |
+      f() { trap 'echo err' ERR; false; echo in-f; }
+      f
+
+  - name: "ERR trap doesn't run for the call that set it"
+    known_failure: true # TODO(trap): the ERR trap runs for the failing call of the function that set it
+    stdin: |
+      f() { trap 'echo err' ERR; return 3; }
+      f
+      echo "first call: $?"
+      f
+      echo "second call: $?"
+
+  - name: "ERR trap set inside a subshell runs there"
+    known_failure: true # TODO(trap): an ERR trap set in a subshell doesn't fire in it
+    stdin: |
+      (trap 'echo err' ERR; false; echo in-sub)
+      echo after
+
+  - name: "EXIT trap - exit in the handler sets a subshell's status"
+    known_failure: true # TODO(trap): a subshell ignores its EXIT trap's exit status
+    stdin: |
+      (trap 'exit 5' EXIT; true)
+      echo "rc=$?"
+
+  - name: "DEBUG trap - exit in the handler ends the shell"
+    known_failure: true # TODO(trap): an exit in the DEBUG trap is ignored
+    stdin: |
+      trap 'exit 4' DEBUG
+      echo not-reached
+
+  - name: "trap rejects -- after the action as a signal"
+    stdin: |
+      trap 'echo x' -- INT 2>/dev/null; echo "rc=$?"
+      trap -p INT
+      trap -- 'echo y' INT; echo "rc=$?"
+      trap -p INT
+
+  - name: "trap sets and resets the valid signals around an invalid one"
+    ignore_stderr: true
+    stdin: |
+      trap 'echo x' INT BOGUS USR1; echo "set: $?"
+      trap -p INT USR1
+      trap - BOGUS INT; echo "reset: $?"
+      trap -p INT USR1
+      trap 'echo y' EXIT --; echo "exit: $?"
+
+  - name: "trap takes -- before the action, and - to reset"
+    stdin: |
+      trap -- 'echo x' USR1
+      trap -p USR1
+      trap -- - USR1
+      trap -p USR1
+      trap 'echo y' USR1
+      trap -- USR1
+      trap -p USR1
+      echo "done"
+
+  - name: "trap -l lists the signals in columns"
+    known_failure: true # TODO(trap): one signal a line, starting with EXIT, not bash's table
+    stdin: |
+      trap -l | head -n 1
+
+  - name: "trap -P prints the action alone"
+    known_failure: true # TODO(trap): -P is an unknown flag
+    min_oracle_version: "5.3"
+    stdin: |
+      trap 'echo x' USR1
+      trap -P USR1

@@ -3,7 +3,7 @@
 //!
 //! Note: these tear down the whole runtime, not just the `Shell`. A backgrounded
 //! command runs in a detached `tokio` task owning a *clone* of the shell; the
-//! shell's job table holds only the task's `JoinHandle`, and dropping that
+//! shell's job table holds only the task's `TaskHandle`, and dropping that
 //! detaches rather than aborts. Dropping the tasks is what drops the `Child`,
 //! where `kill_on_drop` takes effect.
 
@@ -80,9 +80,10 @@ fn spawn_child_then_tear_down(kill_on_drop: bool) -> Result<u32> {
             .await?;
 
         let params = shell.default_exec_params();
-        shell
+        let result = shell
             .run_string(script.as_str(), &brush_core::SourceInfo::default(), &params)
             .await?;
+        anyhow::ensure!(result.is_success(), "starting the background job failed");
 
         // Wait for the child to report its own pid.
         let mut pid = None;

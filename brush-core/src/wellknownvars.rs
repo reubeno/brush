@@ -67,8 +67,11 @@ pub(crate) fn init_well_known_vars(
         shell
             .env_mut()
             .set_global("BASH", ShellVariable::new(shell_name.clone()))?;
-        // Initialize $_ to the shell name ($0).
-        shell.update_last_arg_variable(Some(shell_name));
+        // Initialize $_ to the shell name ($0), unless the shell inherited one: as
+        // in bash, that one stays exported until $_ is next updated.
+        if shell.env_str("_").is_none() {
+            shell.update_last_arg_variable(Some(shell_name));
+        }
     }
 
     // BASHOPTS
@@ -80,7 +83,7 @@ pub(crate) fn init_well_known_vars(
     shell.env_mut().set_global("BASHOPTS", bashopts_var)?;
 
     // BASHPID
-    #[cfg(not(target_family = "wasm"))]
+    #[cfg(not(target_family = "wasm"))] // ast-grep-ignore: platform-cfg-outside-sys
     {
         let mut bashpid_var =
             ShellVariable::new(ShellValue::String(std::process::id().to_string()));
@@ -642,9 +645,10 @@ fn get_bash_source_value(shell: &dyn ShellState) -> variables::ShellValue {
     let stack = shell.call_stack();
 
     if stack.iter_function_calls().next().is_none() {
-        let top_frame = stack.iter_script_calls().next();
-        top_frame
-            .map_or_else(Vec::new, |frame| vec![frame.source_info.source.clone()])
+        stack
+            .iter_script_calls()
+            .map(|frame| frame.source_info.source.clone())
+            .collect::<Vec<_>>()
             .into()
     } else {
         // When in a function, include both functions and sourced scripts in the stack
@@ -741,9 +745,7 @@ fn get_bash_argv_value(shell: &dyn ShellState) -> variables::ShellValue {
     for frame in shell.call_stack().iter() {
         if let Some(args) = frame_bash_args(frame, extdebug) {
             // Push args in reverse order per frame (last arg at lowest index = top of stack)
-            for arg in args.iter().rev() {
-                argv.push(arg.clone());
-            }
+            argv.extend(args.iter().cloned().rev());
         }
     }
 

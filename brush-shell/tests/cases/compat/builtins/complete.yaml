@@ -5,6 +5,33 @@ cases:
       complete -W foo mycmd
       complete
 
+  - name: "complete -p with no such completion spec fails"
+    stdin: |
+      strip() { sed 's/^.*complete:/complete:/'; }
+
+      complete -p mycmd 2>err; echo "rc=$?"; strip <err
+      for flag in -D -E -I; do
+        complete -p $flag 2>err; echo "rc=$?"; strip <err
+      done
+      rm err
+
+  - name: "complete -p lists every spec, including -D, -E, and -I"
+    stdin: |
+      complete -W b bcmd
+      complete -D -W x
+      complete -E -F f
+      complete -I -o nospace -W y
+      complete -W a acmd
+      # Check which specs are listed, not how: bash lists them in its hash table's order.
+      names() { grep -oE -- ' -[DEI]( |$)|[ab]cmd$' | tr -d ' ' | sort; }
+      complete -p | names
+      echo ---
+      complete | names
+      echo ---
+      for name in -D -E -I _DefaultCmD_; do
+        complete -p $name | grep -oE -- "-W 'x'|-F f|-W 'y'"
+      done
+
   - name: "Roundtrip: complete -W"
     stdin: |
       complete -W foo mycmd
@@ -21,6 +48,16 @@ cases:
       complete -P 'my prefix' mycmd
       complete -p mycmd
 
+  - name: "compopt +o wins over -o for the same option"
+    stdin: |
+      complete -W x cmd
+      compopt -o nospace +o nospace cmd
+      complete -p cmd
+      compopt +o nospace -o nospace cmd
+      complete -p cmd
+      compopt -o nospace +o filenames -o filenames cmd
+      complete -p cmd
+
   - name: "Roundtrip: complete -S"
     stdin: |
       complete -S mysuffix mycmd
@@ -34,7 +71,7 @@ cases:
       complete -Fmyfunc mycmd
       complete -p mycmd
 
-  - name: "Roundtrip: complete -F"
+  - name: "Roundtrip: complete -G"
     stdin: |
       complete -G pattern mycmd
       complete -p mycmd
@@ -73,6 +110,88 @@ cases:
         complete -p mycmd_${opt}
       done
 
+  - name: "compopt +o disables an option"
+    stdin: |
+      complete -o nospace -o filenames -W x mycmd
+      compopt +o nospace mycmd; echo "rc=$?"
+      complete -p
+
+  - name: "compopt takes command names starting with + or - after --"
+    stdin: |
+      complete -W x -- +cmd -cmd
+      compopt -o nospace -- +cmd -cmd; echo "rc=$?"
+      complete -p -- +cmd -cmd
+
+  - name: "compopt takes a lone + as a command name"
+    stdin: |
+      strip() { sed -E 's/^.*compopt:/compopt:/'; }
+
+      complete -W x ls
+      compopt -o nospace + ls 2>err; echo "rc=$?"; strip <err
+      complete -p ls
+      rm err
+
+  - name: "compopt with no options prints each spec's options"
+    min_oracle_version: "5.3" # the fullquote option was added in 5.3
+    stdin: |
+      complete -o nospace -W x ls
+      complete -W y cat
+      complete -D -W z
+      compopt ls cat; echo "rc=$?"
+      compopt -D; echo "rc=$?"
+
+  - name: "compopt with no options reports names that have no completion spec"
+    min_oracle_version: "5.3" # the fullquote option was added in 5.3
+    stdin: |
+      strip() { sed -E 's/^.*compopt:/compopt:/'; }
+
+      complete -o nospace -W x ls
+      complete -W y cat
+      compopt nope 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+      compopt ls nope cat 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+
+  - name: "compopt -E or -I with no options prints the spec's options"
+    min_oracle_version: "5.3" # the fullquote option was added in 5.3
+    stdin: |
+      strip() { sed -E 's/^.*compopt:/compopt:/'; }
+
+      for flag in -D -E -I; do
+        compopt $flag 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+      done
+
+      complete -E -o filenames -W x
+      complete -I -o fullquote -W y
+      compopt -E; echo "rc=$?"
+      compopt -I; echo "rc=$?"
+      compopt _EmptycmD_ _InitialWorD_; echo "rc=$?"
+
+  - name: "compopt with no options quotes names as complete -p does"
+    min_oracle_version: "5.3" # the fullquote option was added in 5.3
+    stdin: |
+      complete -W x -- 'a b' "x'y" -foo '*'
+      compopt -- 'a b' "x'y" -foo '*'; echo "rc=$?"
+
+  - name: "compopt with options and names prints nothing"
+    stdin: |
+      complete -W x ls
+      compopt -o nospace ls; echo "rc=$?"
+      compopt +o nospace ls; echo "rc=$?"
+      compopt -o nospace +o nospace ls; echo "rc=$?"
+      complete -D -W y
+      compopt -D -o nospace; echo "rc=$?"
+      complete -p
+
+  - name: "complete and compopt take the fullquote option"
+    min_oracle_version: "5.3" # the fullquote option was added in 5.3
+    stdin: |
+      complete -o fullquote -W x ls; echo "rc=$?"
+      complete -p ls
+      compopt +o fullquote ls; echo "rc=$?"
+      complete -p ls
+      compopt -o fullquote ls; echo "rc=$?"
+      complete -p ls
+      compgen -o fullquote -W 'a b'; echo "rc=$?"
+
   - name: "complete -r"
     stdin: |
       echo "[Removing non-existent]"
@@ -85,6 +204,33 @@ cases:
       echo $?
       complete -p mycmd 2>/dev/null
 
+  - name: "compopt with a name that has no completion spec fails"
+    stdin: |
+      strip() { sed -E 's/^.*compopt:/compopt:/'; }
+
+      complete -W x a
+      compopt -o nospace b a 2>err; echo "rc=$?"; strip <err
+      complete -p a
+      complete -p b >/dev/null 2>&1; echo "b has a spec: rc=$?"
+      rm err
+
+  - name: "compopt -D, -E, or -I with no such completion spec fails"
+    stdin: |
+      strip() { sed -E 's/^.*compopt:/compopt:/'; }
+
+      for flag in -D -E -I; do
+        compopt $flag -o nospace 2>err; echo "rc=$?"; strip <err
+      done
+      rm err
+
+  - name: "compopt -D, -E, or -I updates an existing completion spec"
+    stdin: |
+      for flag in -D -E -I; do
+        complete $flag -W x
+        compopt $flag -o nospace; echo "rc=$?"
+        complete -p $flag | grep -o -- '-o nospace'
+      done
+
   - name: "complete -r with no args"
     stdin: |
       complete -W token mycmd1
@@ -94,6 +240,19 @@ cases:
       echo $?
 
       complete -p
+
+  - name: "compopt outside a completion fails"
+    stdin: |
+      # Normalize away the leading "shell: line N:" that the oracle prefixes onto diagnostics.
+      strip() { sed 's/^.*compopt:/compopt:/'; }
+
+      compopt -o nospace 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+      compopt 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+
+  - name: "compopt in a function that compgen -F runs fails"
+    stdin: |
+      _f() { compopt -o nospace 2>/dev/null; echo "compopt rc=$?"; COMPREPLY=(x); }
+      compgen -F _f y 2>/dev/null; echo "compgen rc=$?"
 
   - name: "complete -r with special options"
     stdin: |
@@ -105,6 +264,49 @@ cases:
 
       complete -p
 
+  - name: "complete -p prints options, actions, and arguments in bash's order"
+    stdin: |
+      complete -v -o nospace -A function -a -o default -F fn -G '*.c' -W 'w1 w2' -X '*.x' -P pre -S suf -C cmd mycmd
+      complete -p mycmd
+      complete -A signal -A arrayvar -b -a -A builtin other
+      complete -p other
+      complete -X '*.y' -W x 'a b'
+      complete -p 'a b'
+
+  - name: "complete -p output round-trips"
+    stdin: |
+      complete -o filenames -A function -X '*.x' -P pre -W 'w1 w2' mycmd
+      complete -D -X '*.y' -F fn
+      before=$(complete -p mycmd; complete -p -D)
+      complete -r
+      eval "$before"
+      after=$(complete -p mycmd; complete -p -D)
+      echo "$after"
+      [[ $before == "$after" ]] && echo "round-tripped"
+
+  - name: "complete -p quotes names like bash, so its output round-trips"
+    stdin: |
+      complete -F '#fn' -W x '~'
+      complete -F a,b cmd1
+      complete -F fn 'a,b'
+      before=$(complete -p '~' cmd1 'a,b')
+      echo "$before"
+      complete -r
+      eval "$before"
+      after=$(complete -p '~' cmd1 'a,b')
+      [[ $before == "$after" ]] && echo "round-tripped"
+
+  - name: "complete actions are generated once each, in bash's order"
+    stdin: |
+      alias zzqa=1
+      zzqf() { :; }
+      compgen -A function -A alias zzq
+      echo ---
+      compgen -A alias -A alias zzq
+      echo ---
+      complete -o nosort -A function -A alias -A function mycmd
+      complete -p mycmd
+
   - name: "compgen -W preserves duplicates"
     stdin: |
       compgen -W "a b a c b"
@@ -112,3 +314,121 @@ cases:
   - name: "compgen -W preserves order"
     stdin: |
       compgen -W "z y x a"
+
+  - name: "complete -p shows a -X pattern with a leading ! as given"
+    stdin: |
+      complete -f -X '!*.txt' mycmd
+      complete -p mycmd
+
+  - name: "compopt and complete -p take words after the first name as names"
+    known_failure: true # TODO(complete): options after a name are still parsed as options
+    min_oracle_version: "5.3" # the fullquote option was added in 5.3
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      complete -W x ls
+      compopt ls -o nospace 2>err; echo "rc=$?"; strip <err
+      complete -p ls
+      complete -W x -- -foo
+      complete -p ls -foo 2>err; echo "rc=$?"; strip <err
+      rm err
+
+  - name: "compopt -D, -E, or -I ignores names given alongside"
+    known_failure: true # TODO(complete): brush refuses names given with -D, -E, or -I
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      complete -D -W x
+      complete -W y cat
+      compopt -o nospace -D cat 2>err; echo "rc=$?"; strip <err
+      complete -p -D
+      complete -p cat
+      rm err
+
+  - name: "compopt +o wins over -o in any order and number, for each spec it updates"
+    stdin: |
+      complete -W x a; complete -W y b
+      complete -D -W z; complete -E -W w; complete -I -W v
+      compopt -o nospace +o nospace -o nospace a b
+      compopt +o nospace -o nospace +o nospace -o nospace -o filenames a
+      compopt -D +o nospace -o nospace -o dirnames
+      compopt -E -o nospace -o nospace
+      compopt -I -o default -o nosort +o default
+      complete -p a; complete -p b
+      for flag in -D -E -I; do complete -p $flag; done
+
+  - name: "compopt takes +o and -o with the option name attached"
+    stdin: |
+      complete -o nospace -o filenames -W x cmd
+      compopt +onospace -odirnames cmd; echo "rc=$?"
+      complete -p cmd
+
+  - name: "complete and compopt pick one of -D, -E, and -I, in that order"
+    stdin: |
+      complete -E -I -W x; complete -p
+      complete -r
+      complete -I -D -W y; complete -p
+      complete -r
+      complete -D -W d; complete -E -W e; complete -I -W i
+      compopt -I -E -o nospace; compopt -E -D -o filenames
+      for flag in -D -E -I; do complete -p $flag; done
+
+  - name: "complete takes the last of a repeated option argument"
+    stdin: |
+      complete -W x -W y -F f -F g -P a -P b -S c -S d -G '*.a' -G '*.b' -X p -X q -C c1 -C c2 cmd
+      complete -p cmd
+
+  - name: "complete takes flags clustered and option arguments attached"
+    stdin: |
+      complete -do nospace c1
+      complete -fWab c2
+      complete -Aalias -onospace c3
+      complete -dA function -Wx c4
+      for c in c1 c2 c3 c4; do complete -p $c; done
+
+  - name: "complete -p takes precedence over -r"
+    stdin: |
+      complete -W x c
+      complete -pr c; echo "rc=$?"
+      complete -rp c; echo "rc=$?"
+      complete -p
+
+  - name: "complete and compopt reject unknown options and names"
+    stdin: |
+      complete -W x c
+      for cmd in 'complete -x d' 'complete -A bogus d' 'complete -o bogus d' 'complete -A' \
+          'complete -o' 'complete -W' 'complete -W x -A bogus d' 'compopt -x c' \
+          'compopt -o bogus c' 'compopt +o bogus c' 'compopt +x c' 'compopt -o' 'compopt +o'; do
+        $cmd 2>/dev/null; echo "$cmd: rc=$?"
+      done
+      complete -p
+
+  - name: "compopt takes +D, +E, and +I as -D, -E, and -I"
+    min_oracle_version: "5.3" # not checked against older versions
+    known_failure: true # TODO(compopt): brush rejects +D, +E, and +I as unknown options
+    stdin: |
+      complete -D -W x; complete -E -W y; complete -I -W z
+      compopt +D -o nospace; echo "rc=$?"
+      compopt +E -o nospace; echo "rc=$?"
+      compopt +I +o nospace -o dirnames; echo "rc=$?"
+      for flag in -D -E -I; do complete -p $flag; done
+
+  - name: "complete with options but no names is a usage error"
+    known_failure: true # TODO(complete): brush succeeds, registering nothing
+    stdin: |
+      complete -W x 2>/dev/null; echo "rc=$?"
+      complete -o nospace 2>/dev/null; echo "rc=$?"
+      complete -p
+
+  - name: "complete -F rejects a function name with blanks or metacharacters"
+    min_oracle_version: "5.3" # not checked against older versions
+    known_failure: true # TODO(complete): brush registers the spec with that name
+    stdin: |
+      complete -F 'a b' c1 2>/dev/null; echo "rc=$?"
+      complete -F 'f;g' c2 2>/dev/null; echo "rc=$?"
+      complete -p
+
+  - name: "complete -p shows an empty -F function name unquoted"
+    min_oracle_version: "5.3" # not checked against older versions
+    known_failure: true # TODO(complete): brush shows it as ''
+    stdin: |
+      complete -F '' c
+      complete -p c

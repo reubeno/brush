@@ -1,4 +1,4 @@
-//! Command timing
+//! Command timing, and formatting dates and times.
 
 use crate::error;
 
@@ -85,10 +85,54 @@ pub fn format_duration_posixly(duration: &std::time::Duration) -> String {
     format!("{seconds}.{ten_millis:02}")
 }
 
+/// Converts an instant to local time: the one place that decides what "local" means. That's
+/// currently the system time zone, from brush's own `TZ` environment variable or else the
+/// platform's configuration; it doesn't (yet) follow `TZ` set in the shell. A `TZ` that
+/// can't be resolved means UTC; that includes the `posix/` and `right/` prefixed names and
+/// POSIX strings that name a DST zone without giving its rules (e.g. `CET-1CEST`).
+pub(crate) fn to_local(timestamp: jiff::Timestamp) -> jiff::Zoned {
+    timestamp.to_zoned(jiff::tz::TimeZone::system())
+}
+
+/// Formats a date/time with a `strftime`-style format string, as the C library does in
+/// the POSIX locale: `%c`, `%x`, `%X`, and `%r` take their POSIX forms, and a directive
+/// that can't be rendered is left as written while the rest of the format is still
+/// rendered.
+pub(crate) fn strftime(datetime: &jiff::Zoned, format: &str) -> String {
+    let config = jiff::fmt::strtime::Config::new()
+        .custom(jiff::fmt::strtime::PosixCustom::new())
+        .lenient(true);
+
+    // In lenient mode, formatting only fails if writing to the string does, which it can't.
+    jiff::fmt::strtime::BrokenDownTime::from(datetime)
+        .to_string_with_config(&config, format)
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn test_strftime() {
+        let dt: jiff::Zoned = "2024-12-05T13:04:05.789Z[UTC]".parse().unwrap();
+        let cases = [
+            ("%Y-%m-%d %H:%M:%S", "2024-12-05 13:04:05"),
+            ("%c", "Thu Dec  5 13:04:05 2024"),
+            ("%x", "12/05/24"),
+            ("%X", "13:04:05"),
+            ("%r", "01:04:05 PM"),
+            ("%Z", "UTC"),
+            // Unknown or incomplete directives are left as written, without
+            // dropping the rest of the format.
+            ("%F %E %v", "2024-12-05 %E %v"),
+            ("%F %", "2024-12-05 %"),
+        ];
+        for (format, expected) in cases {
+            assert_eq!(strftime(&dt, format), expected, "format: {format:?}");
+        }
+    }
 
     #[test]
     fn test_format_time() {

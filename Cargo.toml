@@ -5,11 +5,14 @@ members = [
     "brush-shell",
     "brush-parser",
     "brush-core",
+    "brush-clap-adapter",
+    "brush-winnow-args-adapter",
     "brush-builtins",
     "brush-coreutils-builtins",
     "brush-experimental-builtins",
     "brush-interactive",
     "brush-test-harness",
+    "brush-bundled-tests",
     "fuzz",
     "xtask",
 ]
@@ -69,6 +72,8 @@ bool_to_int_with_if = "allow"
 cognitive_complexity = "allow"
 collapsible_else_if = "allow"
 collapsible_if = "allow"
+# The suggested replacement, the never type, isn't available at our MSRV.
+empty_enums = "allow"
 if_not_else = "allow"
 if_same_then_else = "allow"
 match_same_arms = "allow"
@@ -106,8 +111,15 @@ extend-ignore-re = [
 "hel" = "hel"
 "ba" = "ba"
 
-# This is a specific technical name.
+# These are specific component names.
 "iterm" = "iterm"
+"jod" = "jod"
+
+# Partial words completed in completion tests, allowed only in the files with those tests.
+# (A type's globs match just file names, not paths.)
+[workspace.metadata.typos.type.completion-tests]
+extend-glob = ["compgen.yaml", "words.rs"]
+extend-words = { "fo" = "fo", "whil" = "whil" }
 
 [profile.release]
 strip = true

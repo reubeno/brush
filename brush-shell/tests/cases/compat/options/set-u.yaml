@@ -532,3 +532,8 @@ cases:
       declare -n ref=unset_target
       echo "$ref"
       echo "should not print"
+
+  - name: "Unset variable in a -c string exits with status 127"
+    known_failure: true # TODO(options): exits with status 1; bash's -c exits with 127 on a fatal expansion error
+    ignore_stderr: true
+    args: ["-c", "set -u; echo \"$unset_var\"; echo after"]

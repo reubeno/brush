@@ -1,4 +1,3 @@
-use clap::Parser;
 use itertools::Itertools;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -24,64 +23,68 @@ const DEFAULT_DELIMITER: char = '\n';
 const NUL_DELIMITER: char = '\0';
 
 /// Parse standard input.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct ReadCommand {
+    /// Use readline-like input.
+    #[arg(short = 'e')]
+    use_readline: bool,
+
+    /// Read input in raw mode; no escape sequences.
+    #[arg(short = 'r')]
+    raw_mode: bool,
+
+    /// Do not echo input.
+    #[arg(short = 's')]
+    silent: bool,
+
     /// Optionally, name of an array variable to receive read words
     /// of input.
-    #[clap(short = 'a', value_name = "VAR_NAME")]
+    #[arg(short = 'a', value_name = "VAR_NAME")]
     array_variable: Option<String>,
 
     /// Optionally, a delimiter to use other than a newline character.
-    #[clap(short = 'd')]
+    #[arg(short = 'd')]
     delimiter: Option<String>,
 
-    /// Use readline-like input.
-    #[clap(short = 'e')]
-    use_readline: bool,
-
     /// Provide text to use as initial input for readline.
-    #[clap(short = 'i', value_name = "STR")]
+    #[arg(short = 'i', value_name = "STR")]
     initial_text: Option<String>,
 
     /// Read only the first N characters or until a specified
     /// delimiter is reached, whichever happens first.
-    #[clap(short = 'n', value_name = "COUNT")]
+    #[arg(short = 'n', value_name = "COUNT")]
     return_after_n_chars: Option<usize>,
 
     /// Read exactly N characters, ignoring any specified delimiter.
-    #[clap(short = 'N', value_name = "COUNT")]
+    #[arg(short = 'N', value_name = "COUNT")]
     return_after_n_chars_no_delimiter: Option<usize>,
 
     /// Prompt to display before reading.
-    #[clap(short = 'p')]
+    #[arg(short = 'p')]
     prompt: Option<String>,
-
-    /// Read input in raw mode; no escape sequences.
-    #[clap(short = 'r')]
-    raw_mode: bool,
-
-    /// Do not echo input.
-    #[clap(short = 's')]
-    silent: bool,
 
     /// Specify timeout in seconds; fail if the timeout elapses before
     /// input is completed.
-    #[clap(short = 't', value_name = "SECONDS", allow_hyphen_values = true)]
-    timeout_in_seconds: Option<f64>,
+    #[arg(short = 't', value_name = "SECONDS", allow_hyphen_values)]
+    timeout_in_seconds: Vec<String>,
 
     /// File descriptor to read from instead of stdin.
-    #[clap(short = 'u', name = "FD")]
-    fd_num_to_read: Option<u8>,
+    #[arg(short = 'u', value_name = "FD")]
+    fd_num_to_read: Vec<u8>,
 
     /// Optionally, names of variables to receive read input.
+    #[arg(positional)]
     variable_names: Vec<String>,
 }
 
-impl builtins::Command for ReadCommand {
+brush_winnow_args_adapter::impl_parse_args!(ReadCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ReadCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.use_readline {
@@ -91,16 +94,27 @@ impl builtins::Command for ReadCommand {
             return error::unimp("read -i");
         }
 
-        // Validate timeout value if provided.
-        if let Some(result) = self.validate_timeout(&context)? {
-            return Ok(result);
+        // Every -t and -u given is checked before reading, and the last one is used.
+        let mut timeout = None;
+        for spec in &self.timeout_in_seconds {
+            let Some(parsed) = parse_timeout(spec) else {
+                writeln!(
+                    context.stderr(),
+                    "{}: {spec}: invalid timeout specification",
+                    context.command_name
+                )?;
+                return Ok(brush_core::ExecutionResult::general_error());
+            };
+            timeout = Some(parsed);
         }
 
-        // Find the input stream to use.
-        let fd_num = self.fd_num_to_read.map_or(
-            brush_core::openfiles::OpenFiles::STDIN_FD,
-            brush_core::ShellFd::from,
-        );
+        let mut fd_num = brush_core::openfiles::OpenFiles::STDIN_FD;
+        for fd in &self.fd_num_to_read {
+            fd_num = brush_core::ShellFd::from(*fd);
+            context
+                .try_fd(fd_num)
+                .ok_or_else(|| ErrorKind::BadFileDescriptor(fd_num))?;
+        }
 
         // Retrieve the file.
         let input_stream = context
@@ -112,11 +126,10 @@ impl builtins::Command for ReadCommand {
         // needed for variable assignment.
         let ifs = context.shell.ifs().into_owned();
 
-        // Convert timeout to Duration.
-        let timeout = self.timeout_in_seconds.map(Duration::from_secs_f64);
-
         // Perform the read operation (potentially with timeout).
-        let read_result = self.read_line(input_stream, context.stderr(), timeout)?;
+        let read_result = self
+            .read_line(input_stream, context.stderr(), timeout)
+            .await?;
 
         // Determine whether to skip IFS splitting (for -N option).
         let skip_ifs_splitting = self.return_after_n_chars_no_delimiter.is_some();
@@ -170,7 +183,7 @@ fn assign_input_to_variables(
         let literal_fields = build_array_fields(input_line, ifs, skip_ifs_splitting);
         shell.env_mut().update_or_add(
             array_variable,
-            variables::ShellValueLiteral::Array(variables::ArrayLiteral(literal_fields)),
+            variables::ShellValueLiteral::Array(variables::ArrayLiteral::new(literal_fields)),
             |_| Ok(()),
             env::EnvironmentLookup::Anywhere,
             env::EnvironmentScope::Global,
@@ -316,6 +329,9 @@ enum InputEvent {
     CtrlC,
     /// Ctrl+D was pressed.
     CtrlD,
+    /// No input is available yet, but more may come (e.g., an empty in-memory pipe on
+    /// wasm whose writer, another task, hasn't finished).
+    WouldBlock,
 }
 
 impl InputReader {
@@ -330,7 +346,9 @@ impl InputReader {
                 1,
                 PolledInput {
                     input,
-                    deadline: timeout.map(|t| Instant::now() + t),
+                    // A deadline too far off to represent is no deadline at all.
+                    deadline: timeout.and_then(|t| Instant::now().checked_add(t)),
+                    unread: VecDeque::new(),
                 },
             ),
             pending: VecDeque::new(),
@@ -355,6 +373,12 @@ impl InputReader {
             match self.input.read_char_raw() {
                 Ok(Some(ch)) => break ch,
                 Ok(None) => return Ok(InputEvent::Eof),
+                Err(e) if e.as_io_error().kind() == std::io::ErrorKind::WouldBlock => {
+                    // Nothing more to read yet, but more may come: give back the start of
+                    // any sequence it consumed, to decode once the rest arrives.
+                    self.input.get_mut().unread.extend(e.as_bytes());
+                    return Ok(InputEvent::WouldBlock);
+                }
                 Err(e) => {
                     // Hand back the bytes it consumed, one at a time; the byte that broke
                     // the sequence was left unconsumed, for the next call to re-read.
@@ -393,10 +417,15 @@ struct PolledInput {
     input: brush_core::openfiles::OpenFile,
     /// Optional deadline for timeout.
     deadline: Option<Instant>,
+    /// Bytes given back after a read that would have blocked, to read again first.
+    unread: VecDeque<u8>,
 }
 
 impl Read for PolledInput {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if !self.unread.is_empty() {
+            return self.unread.read(buf);
+        }
         if let Some(deadline) = self.deadline {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero()
@@ -428,7 +457,7 @@ struct LineReaderConfig {
 /// For example, with `-n 3` and input `a\bc` (4 bytes):
 /// - Bash processes: 'a' (output 1), '\b' → 'b' (output 2), 'c' (output 3) → "abc"
 /// - The backslash is consumed but doesn't count toward the limit
-fn read_line_with_reader(
+async fn read_line_with_reader(
     reader: &mut InputReader,
     config: &LineReaderConfig,
 ) -> Result<ReadResult, brush_core::Error> {
@@ -466,6 +495,10 @@ fn read_line_with_reader(
             InputEvent::CtrlC => {
                 return Ok(ReadResult::Interrupted);
             }
+
+            // Let whatever feeds the input (on wasm, another task writing to the
+            // pipe) run, then try again.
+            InputEvent::WouldBlock => tokio::task::yield_now().await,
 
             InputEvent::CtrlD => {
                 // At line start = EOF, mid-input = flush current input.
@@ -542,7 +575,7 @@ impl ReadCommand {
     /// - Without `-r`: backslash-newline is line continuation, other backslashes escape the next
     ///   char
     /// - With `-r`: backslash is treated as a literal character
-    fn read_line(
+    async fn read_line(
         &self,
         input_file: brush_core::openfiles::OpenFile,
         mut stderr_file: impl std::io::Write,
@@ -594,7 +627,7 @@ impl ReadCommand {
             process_escapes: !self.raw_mode,
         };
 
-        read_line_with_reader(&mut reader, &config)
+        read_line_with_reader(&mut reader, &config).await
     }
 
     fn setup_terminal_settings(
@@ -614,29 +647,21 @@ impl ReadCommand {
 
         Ok(mode)
     }
+}
 
-    /// Validates the timeout value and returns an error result if invalid.
-    ///
-    /// Returns `Ok(Some(result))` if the timeout is invalid (caller should return early),
-    /// `Ok(None)` if the timeout is valid or not specified.
-    ///
-    /// TODO(read): Bash uses $TMOUT as a default timeout for `read` when -t is not specified.
-    fn validate_timeout(
-        &self,
-        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
-    ) -> Result<Option<brush_core::ExecutionResult>, brush_core::Error> {
-        if let Some(timeout) = self.timeout_in_seconds {
-            if timeout < 0.0 {
-                writeln!(
-                    context.stderr(),
-                    "{}: -t: invalid timeout specification",
-                    context.command_name
-                )?;
-                return Ok(Some(brush_core::ExecutionResult::general_error()));
-            }
-        }
-        Ok(None)
+/// Parses a `-t` timeout given in seconds, returning `None` if it isn't a valid timeout.
+///
+/// TODO(read): Bash uses $TMOUT as a default timeout for `read` when -t is not specified.
+fn parse_timeout(spec: &str) -> Option<Duration> {
+    let secs: f64 = spec.parse().ok()?;
+
+    // -0 is a zero timeout; other negatives, infinities and NaN are invalid.
+    if !secs.is_finite() || secs < 0.0 {
+        return None;
     }
+
+    // A timeout too long to represent is as good as one that never expires.
+    Some(Duration::try_from_secs_f64(secs).unwrap_or(Duration::MAX))
 }
 
 /// Splits a line by IFS (Internal Field Separator) according to shell rules.
@@ -735,8 +760,8 @@ mod tests {
     // `-t` needs `poll_for_input`, which only the unix backend implements; elsewhere it
     // reports `Unsupported`, so there's no timeout to observe.
     #[cfg(unix)]
-    #[test]
-    fn test_read_times_out_mid_sequence_without_losing_the_partial_bytes() {
+    #[tokio::test]
+    async fn test_read_times_out_mid_sequence_without_losing_the_partial_bytes() {
         let (rx, mut tx) = std::io::pipe().unwrap();
         tx.write_all(b"\xc3").unwrap();
 
@@ -749,10 +774,35 @@ mod tests {
 
         // Holding `tx` means the continuation byte never arrives, so the deadline has to
         // be enforced on it and not just on the byte that started the sequence.
-        let result = read_line_with_reader(&mut reader, &config).unwrap();
+        let result = read_line_with_reader(&mut reader, &config).await.unwrap();
         drop(tx);
 
         assert!(matches!(result, ReadResult::TimedOut(Some(line)) if line == "\u{c3}"));
+    }
+
+    // ==================== Input that isn't ready yet ====================
+
+    #[tokio::test]
+    async fn test_read_waits_for_input_that_isnt_ready_yet() {
+        // Not ready before the line starts, mid-line, and mid-way through a two-byte
+        // UTF-8 sequence.
+        let file = crate::not_ready::NotReadyYet::file([
+            None,
+            Some(b"ab".as_slice()),
+            None,
+            Some(b"c\xc3".as_slice()),
+            None,
+            Some(b"\xa9d\nrest".as_slice()),
+        ]);
+        let mut reader = InputReader::new(file, None, None);
+        let config = LineReaderConfig {
+            delimiter: Some(DEFAULT_DELIMITER),
+            char_limit: None,
+            process_escapes: false,
+        };
+
+        let result = read_line_with_reader(&mut reader, &config).await.unwrap();
+        assert!(matches!(result, ReadResult::Line(line) if line == "abc\u{e9}d"));
     }
 
     // ==================== split_line_by_ifs tests ====================
@@ -869,7 +919,7 @@ mod tests {
     #[test]
     fn test_build_array_fields_none_input() {
         let result = build_array_fields(None, " ", false);
-        assert!(result.is_empty());
+        assert_eq!(result, Vec::<(Option<String>, String)>::new());
     }
 
     // ==================== build_variable_fields tests ====================
@@ -897,6 +947,6 @@ mod tests {
     #[test]
     fn test_build_variable_fields_none_input() {
         let result = build_variable_fields(None, " ", false, 3);
-        assert!(result.is_empty());
+        assert_eq!(result, VecDeque::<String>::new());
     }
 }

@@ -1,0 +1,17 @@
+name: "Builtins: suspend"
+cases:
+  - name: "suspend without job control fails"
+    known_failure: true # TODO(suspend): brush stops itself
+    # brush stops until the timeout kills it.
+    timeout_in_seconds: 2
+    ignore_stderr: true
+    stdin: |
+      suspend
+      echo "suspend: $?"
+
+  - name: "suspend with an operand abandons the rest of the line"
+    known_failure: true # TODO(suspend): a usage error with status 2, and the line goes on
+    ignore_stderr: true
+    stdin: |
+      suspend foo; echo "same line: $?"
+      echo "next line: $?"

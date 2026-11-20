@@ -143,3 +143,34 @@ cases:
         echo "After source"
       done
       echo "After loop"
+
+  - name: "Sourcing a missing file fails and goes on"
+    ignore_stderr: true
+    stdin: |
+      . /nonexistent-file
+      echo "after: $?"
+
+  - name: "Sourcing a file with an unset variable under set -u ends the shell"
+    ignore_stderr: true
+    test_files:
+      - path: "script.sh"
+        contents: |
+          echo "sourced $nope"
+    stdin: |
+      set -u
+      . ./script.sh; echo "rc=$?"
+      echo next
+
+  - name: "source passes -- and options to the script"
+    test_files:
+      - path: "script.sh"
+        contents: |
+          echo "$#: $*"
+    stdin: |
+      . ./script.sh -- a
+      . ./script.sh -x
+      . -- ./script.sh b
+
+  - name: ". --help prints what help . prints"
+    stdin: |
+      [[ "$(. --help; echo .)" == "$(help .; echo .)" ]] && echo "same"

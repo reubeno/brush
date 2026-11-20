@@ -45,8 +45,9 @@ fn needs_more_input_locked(shell: &Shell<impl brush_core::ShellExtensions>, inpu
         Err(_) => false,
         // Parsed cleanly. One catch: a trailing backslash-newline is a line
         // continuation, which the tokenizer drops silently at end of input. Ask again
-        // with the newline removed; the tokenizer reports an unterminated escape only
-        // if that backslash was really escaping something.
+        // with the newline removed; that leaves the input incomplete (e.g., an
+        // unterminated escape, or a here-document body not yet ended) only if that
+        // backslash was really escaping the newline.
         Ok(_) => ends_with_line_continuation(shell, input),
     }
 }
@@ -68,10 +69,7 @@ fn ends_with_line_continuation(
 
     matches!(
         shell.parse_string(truncated),
-        Err(brush_parser::ParseError::Tokenizing {
-            inner: brush_parser::TokenizerError::UnterminatedEscapeSequence,
-            position: _,
-        })
+        Err(brush_parser::ParseError::Tokenizing { inner, position: _ }) if inner.is_incomplete()
     )
 }
 
@@ -92,6 +90,35 @@ mod tests {
         assert!(needs_more_input_locked(&shell, "echo \"quoted\" \\\n"));
         // A backslash at the very end, with no newline yet.
         assert!(needs_more_input_locked(&shell, "echo a\\"));
+    }
+
+    #[tokio::test]
+    async fn treats_input_ending_before_here_tag_as_incomplete() {
+        let shell = test_shell().await;
+
+        // A line continuation right after the operator: the tag comes on the next line.
+        assert!(needs_more_input_locked(&shell, "cat << \\\n"));
+        // Input ending right at the operator is incomplete too (the parser reports it).
+        assert!(needs_more_input_locked(&shell, "cat <<"));
+        assert!(needs_more_input_locked(&shell, "cat <<\\\n"));
+        // A line continuation after what would be a here-document's end tag joins the next
+        // line onto it, so the body hasn't ended.
+        assert!(needs_more_input_locked(&shell, "cat <<E\nabc\nE\\\n"));
+        // A newline where the tag belongs is an error, though, not a reason to wait.
+        assert!(!needs_more_input_locked(&shell, "cat <<\n"));
+    }
+
+    #[tokio::test]
+    async fn treats_here_doc_with_empty_tag_as_incomplete_until_empty_line() {
+        let shell = test_shell().await;
+
+        // As in bash, an empty tag's body ends at the first empty line, which hasn't been
+        // read yet; the input isn't complete (with an empty body) at the tag's newline.
+        assert!(needs_more_input_locked(&shell, "cat <<''\n"));
+        assert!(needs_more_input_locked(&shell, "cat <<\"\"\n"));
+        assert!(needs_more_input_locked(&shell, "cat <<''\nbody\n"));
+        assert!(!needs_more_input_locked(&shell, "cat <<''\n\n"));
+        assert!(!needs_more_input_locked(&shell, "cat <<''\nbody\n\n"));
     }
 
     #[tokio::test]

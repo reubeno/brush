@@ -58,6 +58,31 @@ cases:
       echo "exit: $?"
       echo "target: $target"
 
+  - name: "a failed readonly assignment inside a pipeline reports its status"
+    known_failure: true # TODO: a readonly assignment failing as a pipeline element reports status 0
+    stdin: |
+      readonly r=1
+      r=2 | cat
+      echo "pipeline: ${PIPESTATUS[0]}"
+
+  - name: "readonly reports a readonly variable and goes on"
+    known_failure: true # TODO(readonly): stops at a readonly variable instead of going on to the next operand
+    ignore_stderr: true
+    stdin: |
+      readonly r=1
+      readonly r=4 z=5
+      echo "readonly: $? r=$r z=$z"
+
+  - name: "readonly -a with an assignment converts and types the variable"
+    stdin: |
+      e5=x
+      readonly -a e5=y
+      echo "value_status=$?"
+      declare -p e5
+      readonly -A na=([k]=v)
+      echo "assoc_status=$?"
+      declare -p na
+
   - name: "readonly -f marks a function readonly rather than displaying it"
     # brush routes `readonly -f` through the same display path as `declare -f`, so it prints the
     # function's definition and never makes it readonly. A shell prints nothing, rejects a later
@@ -71,3 +96,97 @@ cases:
       g() { echo redefined; }
       g
       readonly -f nosuchfn
+  #
+  # Readonly is enforced for assignments that target a single array element, not just for
+  # assignments that replace a whole variable.
+  #
+  - name: "readonly blocks a plain subscripted assignment"
+    ignore_stderr: true
+    stdin: |
+      arr=(one)
+      readonly arr
+      arr[0]=mutated
+      echo "status: $?"
+      declare -p arr
+
+  - name: "readonly blocks appending to an array element"
+    ignore_stderr: true
+    stdin: |
+      declare -A map=([k]=one)
+      readonly map
+      map[k]+=two
+      echo "status: $?"
+      declare -p map
+
+  - name: "readonly blocks adding a new array element"
+    ignore_stderr: true
+    stdin: |
+      arr=(one)
+      readonly arr
+      arr[5]=added
+      echo "status: $?"
+      declare -p arr
+
+  #
+  # Readonly enforcement reached through paths other than a plain assignment. The element guard
+  # lives in the one place all of these converge, so these cases keep the other callers honest.
+  #
+  - name: "readonly blocks an assignment expansion on an array element"
+    ignore_stderr: true
+    stdin: |
+      declare -a c=(one)
+      readonly c
+      echo "${c[1]:=default}"
+      declare -p c
+
+  - name: "readonly blocks an assignment expansion on a scalar"
+    ignore_stderr: true
+    stdin: |
+      declare u
+      readonly u
+      echo "${u:=default}"
+      echo "after"
+
+  - name: "readonly blocks an arithmetic assignment to an array element"
+    ignore_stderr: true
+    stdin: |
+      a=(one)
+      readonly a
+      (( a[0] = 99 ))
+      echo "status: $?"
+      declare -p a
+
+  - name: "readonly blocks an arithmetic assignment to a scalar"
+    ignore_stderr: true
+    stdin: |
+      s=1
+      readonly s
+      (( s = 5 ))
+      echo "status: $?"
+      declare -p s
+
+  - name: "readonly blocks mapfile from replacing an array"
+    ignore_stderr: true
+    stdin: |
+      m=(one)
+      readonly m
+      printf 'x\ny\n' | mapfile -t m
+      echo "status: $?"
+      declare -p m
+
+  - name: "readonly -a without a value does not retype an existing variable"
+    stdin: |
+      s=1
+      readonly -a s
+      echo "status: $?"
+      readonly r=1
+      readonly -a r
+      echo "status: $?"
+      readonly -A r
+      echo "status: $?"
+      declare v
+      readonly -a v
+      declare -ra ra=(1)
+      readonly -a ra
+      echo "status: $?"
+      declare -p s r v ra

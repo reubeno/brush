@@ -1,16 +1,38 @@
 //! Generation commands for documentation, completions, and schemas.
 //!
 //! This module provides commands for generating various artifacts:
-//! - **Documentation**: Man pages and markdown help text from clap definitions
+//! - **Documentation**: Man pages and markdown help text for the command line
 //! - **Completions**: Shell completion scripts for bash, zsh, fish, etc.
 //! - **Schemas**: JSON schemas for configuration files
 //! - **Distribution archives**: Reproducible documentation bundles with checksums
+//!
+//! Man pages and markdown are rendered from the fragments winnow-args' derives
+//! write while `brush-shell` is checked with `WINNOW_ARGS_SPEC` set: one TOML
+//! file per command-line type.
+//!
+//! Completion scripts are winnow-args' own: they call back into `brush` for
+//! their answers, so they need only its name, which comes from those
+//! fragments too.
+//!
+//! The config schema is produced by the `gen` example in `brush-shell`, which
+//! this module shells out to. Either way xtask stays free of any dependency on
+//! the shell it's used to build.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use clap::{CommandFactory, Parser};
+use clap::Parser;
+use winnow_args::complete::Shell as CompletionShell;
+use winnow_args_man::Manual;
+use winnow_args_spec::Catalog;
 use xshell::{Shell, cmd};
+
+use crate::common::find_package_version;
+
+/// The crate, as the derives name its directory, and the type of the `brush`
+/// command line.
+const SHELL_CRATE: &str = "brush_shell";
+const SHELL_COMMAND: &str = "CommandLineArgs";
 
 /// Generate various artifacts.
 #[derive(Parser)]
@@ -101,48 +123,60 @@ pub struct GenerateSchemaArgs {
 
 /// Run a generation command.
 pub fn run(cmd: &GenCommand, verbose: bool) -> Result<()> {
+    let sh = Shell::new()?;
     match cmd {
         GenCommand::Docs(docs_cmd) => match docs_cmd {
-            DocsCommand::Man(args) => gen_man(args, verbose),
-            DocsCommand::Markdown(args) => gen_markdown_docs(args, verbose),
-            DocsCommand::Dist(args) => gen_docs_dist(args, verbose),
+            DocsCommand::Man(args) => gen_man(&sh, args, verbose),
+            DocsCommand::Markdown(args) => gen_markdown_docs(&sh, args, verbose),
+            DocsCommand::Dist(args) => gen_docs_dist(&sh, args, verbose),
         },
         GenCommand::Completion(completion_cmd) => {
             let shell = match completion_cmd {
-                CompletionCommand::Bash => clap_complete::Shell::Bash,
-                CompletionCommand::Elvish => clap_complete::Shell::Elvish,
-                CompletionCommand::Fish => clap_complete::Shell::Fish,
-                CompletionCommand::PowerShell => clap_complete::Shell::PowerShell,
-                CompletionCommand::Zsh => clap_complete::Shell::Zsh,
+                CompletionCommand::Bash => CompletionShell::Bash,
+                CompletionCommand::Elvish => CompletionShell::Elvish,
+                CompletionCommand::Fish => CompletionShell::Fish,
+                CompletionCommand::PowerShell => CompletionShell::PowerShell,
+                CompletionCommand::Zsh => CompletionShell::Zsh,
             };
-            gen_completion_script(shell, verbose);
-            Ok(())
+            gen_completion_script(&sh, shell, verbose)
         }
         GenCommand::Schema(schema_cmd) => match schema_cmd {
-            SchemaCommand::Config(args) => gen_config_schema(args, verbose),
+            SchemaCommand::Config(args) => gen_config_schema(&sh, args, verbose),
         },
     }
 }
 
-fn gen_man(args: &GenerateManArgs, verbose: bool) -> Result<()> {
+fn gen_man(sh: &Shell, args: &GenerateManArgs, verbose: bool) -> Result<()> {
     if verbose {
         eprintln!("Generating man pages to: {}", args.output_dir.display());
     }
 
-    // Create the output dir if it doesn't exist. If it already does, we proceed
-    // onward and hope for the best.
-    if !args.output_dir.exists() {
-        std::fs::create_dir_all(&args.output_dir)?;
-    }
-
-    // Generate!
-    let cmd = brush_shell::args::CommandLineArgs::command();
-    clap_mangen::generate_to(cmd, &args.output_dir)?;
-
-    Ok(())
+    let spec = write_fragments(sh)?;
+    write_man(spec.path(), &args.output_dir)
 }
 
-fn gen_markdown_docs(args: &GenerateMarkdownArgs, verbose: bool) -> Result<()> {
+/// Write the command line's man pages from the fragments in `spec`.
+fn write_man(spec: &Path, output_dir: &Path) -> Result<()> {
+    let command = shell_command(spec)?;
+    write_pages(
+        output_dir,
+        &manual()?.render_pages(&command, &command.name)?,
+    )
+}
+
+/// The header and footer of a man page, which name brush's version. The
+/// command line declares its own `--version`, so its fragment has none.
+fn manual() -> Result<Manual> {
+    let version = find_package_version("brush-shell")?;
+    Ok(Manual {
+        source: format!("brush {version}"),
+        // What man shows for section 1 when a page names no manual.
+        manual: "General Commands Manual".into(),
+        ..Manual::default()
+    })
+}
+
+fn gen_markdown_docs(sh: &Shell, args: &GenerateMarkdownArgs, verbose: bool) -> Result<()> {
     if verbose {
         eprintln!(
             "Generating markdown docs to: {}",
@@ -150,15 +184,49 @@ fn gen_markdown_docs(args: &GenerateMarkdownArgs, verbose: bool) -> Result<()> {
         );
     }
 
-    let options = clap_markdown::MarkdownOptions::new()
-        .show_footer(false)
-        .show_table_of_contents(true);
+    let spec = write_fragments(sh)?;
+    write_markdown(spec.path(), &args.output_path)
+}
 
-    // Generate!
-    let markdown =
-        clap_markdown::help_markdown_custom::<brush_shell::args::CommandLineArgs>(&options);
-    std::fs::write(&args.output_path, markdown)?;
+/// Write the command line's markdown page from the fragments in `spec`.
+fn write_markdown(spec: &Path, output_path: &Path) -> Result<()> {
+    let command = shell_command(spec)?;
+    // `brush` has no subcommands, so its one page is the whole of it.
+    let (_, page) = winnow_args_markdown::render_pages(&command, &command.name)?
+        .into_iter()
+        .next()
+        .context("the command line has no page")?;
+    std::fs::write(output_path, page)
+        .with_context(|| format!("Failed to write {}", output_path.display()))
+}
 
+/// The command line, stitched from the fragments in `spec`.
+fn shell_command(spec: &Path) -> Result<winnow_args_spec::Command> {
+    Ok(Catalog::load(&spec.join(SHELL_CRATE))?.stitch(SHELL_COMMAND)?)
+}
+
+/// Check `brush-shell` with `WINNOW_ARGS_SPEC` set, and return the directory
+/// the derives wrote to: one subdirectory per crate.
+///
+/// Cargo compiles a crate that derives again when that variable changes. A
+/// new directory each time has every such crate write its fragments.
+fn write_fragments(sh: &Shell) -> Result<tempfile::TempDir> {
+    let spec = tempfile::tempdir().context("Failed to create temporary directory")?;
+    cmd!(sh, "cargo check --package brush-shell")
+        .env("WINNOW_ARGS_SPEC", spec.path())
+        .run()
+        .context("Failed to check brush-shell for its command-line fragments")?;
+    Ok(spec)
+}
+
+/// Write each `(file name, contents)` pair into `dir`.
+fn write_pages(dir: &Path, pages: &[(String, String)]) -> Result<()> {
+    std::fs::create_dir_all(dir).with_context(|| format!("Failed to create {}", dir.display()))?;
+    for (name, contents) in pages {
+        let path = dir.join(name);
+        std::fs::write(&path, contents)
+            .with_context(|| format!("Failed to write {}", path.display()))?;
+    }
     Ok(())
 }
 
@@ -166,15 +234,17 @@ fn gen_markdown_docs(args: &GenerateMarkdownArgs, verbose: bool) -> Result<()> {
 ///
 /// The completion script is written directly to stdout so it can be piped
 /// to a file or sourced directly by the shell.
-fn gen_completion_script(shell: clap_complete::Shell, verbose: bool) {
+fn gen_completion_script(sh: &Shell, shell: CompletionShell, verbose: bool) -> Result<()> {
     if verbose {
-        eprintln!("Generating {shell} completion script...");
+        eprintln!("Generating {} completion script...", shell.as_str());
     }
-    let mut cmd = brush_shell::args::CommandLineArgs::command();
-    clap_complete::generate(shell, &mut cmd, "brush", &mut std::io::stdout());
+    let spec = write_fragments(sh)?;
+    let command = shell_command(spec.path())?;
+    print!("{}", winnow_args::complete::script(&command.name, shell));
+    Ok(())
 }
 
-fn gen_config_schema(args: &GenerateSchemaArgs, verbose: bool) -> Result<()> {
+fn gen_config_schema(sh: &Shell, args: &GenerateSchemaArgs, verbose: bool) -> Result<()> {
     if verbose {
         eprintln!(
             "Generating config schema to: {}",
@@ -182,17 +252,19 @@ fn gen_config_schema(args: &GenerateSchemaArgs, verbose: bool) -> Result<()> {
         );
     }
 
-    // Generate JSON schema for the configuration file.
-    let schema = schemars::schema_for!(brush_shell::config::Config);
-    let json = serde_json::to_string_pretty(&schema)?;
-    std::fs::write(&args.output_path, format!("{json}\n"))?;
-
+    // Built with brush-shell's default features plus `schema`, so the schema
+    // describes the config as that feature set has it.
+    let output_path = &args.output_path;
+    cmd!(
+        sh,
+        "cargo run --package brush-shell --features schema --example gen -- {output_path}"
+    )
+    .run()
+    .context("Failed to run the gen example in brush-shell")?;
     Ok(())
 }
 
-fn gen_docs_dist(args: &GenerateDistArgs, verbose: bool) -> Result<()> {
-    let sh = Shell::new()?;
-
+fn gen_docs_dist(sh: &Shell, args: &GenerateDistArgs, verbose: bool) -> Result<()> {
     // Create a temporary directory for staging the documentation
     let temp_dir = tempfile::tempdir().context("Failed to create temporary directory")?;
     let staging_dir = temp_dir.path();
@@ -206,17 +278,10 @@ fn gen_docs_dist(args: &GenerateDistArgs, verbose: bool) -> Result<()> {
         eprintln!("Staging documentation in: {}", staging_dir.display());
     }
 
-    // Generate markdown documentation
-    let md_args = GenerateMarkdownArgs {
-        output_path: md_dir.join("brush.md"),
-    };
-    gen_markdown_docs(&md_args, verbose)?;
-
-    // Generate man pages
-    let man_args = GenerateManArgs {
-        output_dir: man_dir,
-    };
-    gen_man(&man_args, verbose)?;
+    // One check writes the fragments the markdown and man pages are rendered from.
+    let spec = write_fragments(sh)?;
+    write_markdown(spec.path(), &md_dir.join("brush.md"))?;
+    write_man(spec.path(), &man_dir)?;
 
     // Get absolute path for output
     let output_path = if args.output_path.is_absolute() {
@@ -278,4 +343,19 @@ fn gen_docs_dist(args: &GenerateDistArgs, verbose: bool) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn man_pages_name_the_version_and_the_manual() {
+        let manual = manual().unwrap();
+        assert_eq!(
+            manual.source,
+            format!("brush {}", find_package_version("brush-shell").unwrap())
+        );
+        assert_eq!(manual.manual, "General Commands Manual");
+    }
 }

@@ -236,12 +236,37 @@ cases:
       echo "[$_]"
 
   - name: "$_ - exec does not override _ in child env"
-    known_failure: true # exec builtin goes through compose_std_command which unconditionally sets _
+    known_failure: true # TODO(exec): exec sets _ to the program's path, as for any external command
     stdin: |
       # bash does not set _ in the child's env for exec; the child inherits
-      # the parent's _ value. brush currently sets _ to the resolved command
-      # path (same as a normal external command), which is wrong for exec.
+      # the parent's _ value.
       (exec $(which env)) | grep '^_='
+
+  - name: "$_ - exec at the top level does not override _ in child env"
+    stdin: |
+      # Unlike in a subshell, exec here replaces the shell itself. What _ the child
+      # inherits differs between shells (it's the shell's own path), so check only
+      # that exec didn't set it to the program's.
+      printenv_path=$(which printenv)
+      underscore=$("$0" -c 'exec "$(which printenv)" _')
+      [[ "${underscore}" == "${printenv_path}" ]] && echo "exec set _" || echo "exec left _ alone"
+
+  - name: "$_ - exec passes on the _ the shell inherited"
+    stdin: |
+      # The shell running "$0" sets its _ to the path it ran it by; exec passes that on.
+      underscore=$("$0" -c 'exec printenv _')
+      [[ "${underscore}" == "$0" ]] && echo "inherited _" || echo "other _: ${underscore}"
+
+  - name: "$_ - without one to inherit, a shell starts with an unexported $0"
+    stdin: |
+      env -u _ "$0" -c '[[ $_ == "$0" ]] && echo "_ is \$0"; exec printenv _'
+      echo "printenv: $?"
+
+  - name: "$_ - exec after a command passes no _"
+    stdin: |
+      # Updating $_ unexports it, so a command run before exec leaves none to pass on.
+      "$0" -c 'true; exec printenv _'
+      echo "printenv: $?"
 
   - name: "$@ and $*"
     stdin: |

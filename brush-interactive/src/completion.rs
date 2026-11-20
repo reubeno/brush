@@ -19,7 +19,7 @@ pub(crate) async fn complete_async(
         result = &mut completion_future => {
             result
         }
-        _ = tokio::signal::ctrl_c() => {
+        _ = brush_core::sys::signal::await_ctrl_c() => {
             Err(brush_core::ErrorKind::Interrupted.into())
         },
     };
@@ -109,7 +109,12 @@ fn postprocess_completion_candidate(
                 _ => escape::QuoteMode::BackslashEscape,
             };
 
-            candidate = escape::quote_if_needed(&candidate, quote_mode).to_string();
+            // Like bash, leave a `~` unquoted, so a `~user` completion still expands.
+            let options = escape::QuoteOptions::builder()
+                .preferred_mode(quote_mode)
+                .leave_tilde(true)
+                .build();
+            candidate = escape::quote(&candidate, &options).to_string();
         }
     }
     if completing_end_of_line && !options.no_trailing_space_at_end_of_line {
@@ -120,4 +125,35 @@ fn postprocess_completion_candidate(
     }
 
     candidate
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Quotes a file-name candidate completed at the end of the line.
+    fn quoted_file_name(candidate: &str) -> String {
+        let options = brush_core::completion::ProcessingOptions {
+            treat_as_filenames: true,
+            ..Default::default()
+        };
+        postprocess_completion_candidate(
+            candidate.to_owned(),
+            &options,
+            Path::new("/nonexistent"),
+            true,
+            None,
+        )
+    }
+
+    #[test]
+    fn file_names_are_quoted_like_bash() {
+        // Like bash, a `~user` candidate isn't quoted, so it still expands...
+        assert_eq!(quoted_file_name("~root"), "~root ");
+        // ...but a leading `#` is, so it doesn't start a comment.
+        assert_eq!(quoted_file_name("#hash"), r"\#hash ");
+        assert_eq!(quoted_file_name("a b"), r"a\ b ");
+        // Like bash, a comma isn't special on its own.
+        assert_eq!(quoted_file_name("a,b"), "a,b ");
+    }
 }

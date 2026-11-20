@@ -157,18 +157,35 @@ fn add_missing_escape_chars_to_regex(s: &str) -> Cow<'_, str> {
     // to escape that character.
     let mut in_escape = false;
     let mut in_brackets = false;
+    // A ']' in the first member position of a bracket expression (immediately after the
+    // opening '[' or after the leading '^' that negates it) is a member of the
+    // expression, not its terminator.
+    let mut at_first_member = false;
     let mut insertion_positions = vec![];
 
     let mut peekable = s.char_indices().peekable();
     while let Some((byte_offset, c)) = peekable.next() {
         let next_is_colon = peekable.peek().is_some_and(|(_, c)| *c == ':');
+        let was_at_first_member = at_first_member;
+        at_first_member = false;
 
         match c {
             '[' if !in_escape && !in_brackets => {
                 in_brackets = true;
+                // A '^' here negates the expression; it isn't a member itself, so the
+                // first member position is the one after it. Any later '^' is an
+                // ordinary member.
+                let _ = peekable.next_if(|(_, c)| *c == '^');
+                at_first_member = true;
             }
             '[' if !in_escape && in_brackets && !next_is_colon => {
                 // Need to escape.
+                insertion_positions.push(byte_offset);
+            }
+            ']' if !in_escape && in_brackets && was_at_first_member => {
+                // `fancy_regex` doesn't implement the rule that this ']' is a member;
+                // escape it so it's a member there too, and so it can be the low end
+                // of a range (e.g. `[]-a]`).
                 insertion_positions.push(byte_offset);
             }
             ']' if !in_escape && in_brackets => {
@@ -229,5 +246,32 @@ mod tests {
         // Positive case -- where we need to escape.
         assert_eq!(add_missing_escape_chars_to_regex(r"a[b[]"), r"a[b\[]");
         assert_eq!(add_missing_escape_chars_to_regex(r"a[[]"), r"a[\[]");
+    }
+
+    #[test]
+    fn test_leading_close_bracket_in_bracket_expression() {
+        // A ']' in the first member position (after any '^') is a member of the bracket
+        // expression, not its terminator, so the expression is still open after it.
+        // It's escaped as well, since `fancy_regex` doesn't implement that rule; that
+        // also makes it the low end of a range in `[]-a]`, as it is in a shell pattern.
+        assert_eq!(add_missing_escape_chars_to_regex("[]]"), r"[\]]");
+        assert_eq!(add_missing_escape_chars_to_regex("[^]]"), r"[^\]]");
+        assert_eq!(add_missing_escape_chars_to_regex("[][]"), r"[\]\[]");
+        assert_eq!(add_missing_escape_chars_to_regex("[^][]"), r"[^\]\[]");
+        assert_eq!(add_missing_escape_chars_to_regex("[]a[]"), r"[\]a\[]");
+        assert_eq!(add_missing_escape_chars_to_regex("[]-a]"), r"[\]-a]");
+
+        // The rule only applies in the first member position: the ']' in `[a]` and the
+        // already-escaped one in `[\]]` both close their expressions.
+        assert_eq!(add_missing_escape_chars_to_regex("[a][]x]"), r"[a][\]x]");
+        assert_eq!(add_missing_escape_chars_to_regex(r"[\]][]x]"), r"[\]][\]x]");
+
+        // Only the '^' that negates the expression is skipped over; a later one is an
+        // ordinary member, so the ']' after it terminates the expression.
+        assert_eq!(add_missing_escape_chars_to_regex("[^^][ab]"), "[^^][ab]");
+        assert_eq!(add_missing_escape_chars_to_regex("[^^][b[]"), r"[^^][b\[]");
+
+        // A '^' outside a bracket expression doesn't open one.
+        assert_eq!(add_missing_escape_chars_to_regex("^[a[]"), r"^[a\[]");
     }
 }

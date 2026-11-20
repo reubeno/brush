@@ -1,4 +1,3 @@
-use clap::{Parser, ValueEnum};
 use itertools::Itertools as _;
 use std::{collections::HashMap, io::Write, str::FromStr as _, sync::Arc};
 use strum::IntoEnumIterator;
@@ -9,21 +8,6 @@ use brush_core::{
     interfaces::{self, InputFunction, KeyAction, KeySequence},
     sys, trace_categories,
 };
-
-/// Identifier for a keymap
-#[derive(Clone, ValueEnum)]
-enum BindKeyMap {
-    #[clap(name = "emacs-standard", alias = "emacs")]
-    EmacsStandard,
-    #[clap(name = "emacs-meta")]
-    EmacsMeta,
-    #[clap(name = "emacs-ctlx")]
-    EmacsCtlx,
-    #[clap(name = "vi-command", aliases = &["vi", "vi-move"])]
-    ViCommand,
-    #[clap(name = "vi-insert")]
-    ViInsert,
-}
 
 impl BindKeyMap {
     const fn is_vi(&self) -> bool {
@@ -40,7 +24,8 @@ impl BindKeyMap {
 }
 
 /// Inspect and modify key bindings and other input configuration.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct BindCommand {
     /// Name of key map to use.
     #[arg(short = 'm')]
@@ -85,8 +70,26 @@ pub(crate) struct BindCommand {
     #[arg(short = 'X')]
     list_key_seq_bindings: bool,
     /// Key sequence binding to readline function or command.
+    #[arg(positional)]
     key_sequence: Option<String>,
 }
+
+/// Identifier for a keymap
+#[derive(Clone, winnow_args::ValueEnum)]
+pub(crate) enum BindKeyMap {
+    #[arg(name = "emacs-standard", alias = "emacs")]
+    EmacsStandard,
+    #[arg(name = "emacs-meta")]
+    EmacsMeta,
+    #[arg(name = "emacs-ctlx")]
+    EmacsCtlx,
+    #[arg(name = "vi-command", alias("vi", "vi-move"))]
+    ViCommand,
+    #[arg(name = "vi-insert")]
+    ViInsert,
+}
+
+brush_winnow_args_adapter::impl_parse_args!(BindCommand);
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum BindError {
@@ -119,11 +122,11 @@ impl From<&BindError> for brush_core::ExecutionExitCode {
     }
 }
 
-impl builtins::Command for BindCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for BindCommand {
     type Error = BindError;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if let Some(key_bindings) = context.shell.key_bindings() {
@@ -369,7 +372,6 @@ fn bind_key_sequence_to_readline_target(
             }
 
             bindings.bind(key_sequence, interfaces::KeyAction::DoInputFunction(func))?;
-            Ok(())
         }
         BindableReadlineTarget::Macro(cmd_macro) => {
             tracing::debug!(target: trace_categories::INPUT,
@@ -377,9 +379,10 @@ fn bind_key_sequence_to_readline_target(
             );
 
             bindings.define_macro(key_sequence, cmd_macro)?;
-            Ok(())
         }
     }
+
+    Ok(())
 }
 
 fn key_sequence_to_abstract_strokes(

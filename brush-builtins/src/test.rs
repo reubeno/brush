@@ -1,4 +1,3 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{
@@ -6,32 +5,25 @@ use brush_core::{
 };
 
 /// Evaluate test expression.
-#[derive(Parser)]
-#[clap(disable_help_flag = true, disable_version_flag = true)]
+#[derive(winnow_args::Args)]
+#[arg(
+    unknown_flags = "value",
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand
+)]
 pub(crate) struct TestCommand {
-    #[clap(allow_hyphen_values = true)]
+    #[arg(positional, double_dash = "preserve")]
     args: Vec<String>,
 }
 
-impl builtins::Command for TestCommand {
+brush_winnow_args_adapter::impl_parse_args!(TestCommand, keep_double_dash = args);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for TestCommand {
     type Error = brush_core::Error;
 
-    /// Override the default [`builtins::Command::new`] function to handle clap's limitation related
-    /// to `--`. See [`builtins::parse_known`] for more information
-    /// TODO(test): we can safely remove this after the issue is resolved
-    fn new<I>(args: I) -> Result<Self, clap::Error>
-    where
-        I: IntoIterator<Item = String>,
-    {
-        let (mut this, rest_args) = brush_core::builtins::try_parse_known::<Self>(args)?;
-        if let Some(args) = rest_args {
-            this.args.extend(args);
-        }
-        Ok(this)
-    }
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut args = self.args.as_slice();

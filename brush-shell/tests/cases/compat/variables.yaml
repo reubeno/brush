@@ -79,38 +79,91 @@ cases:
       }
       f
 
-  - name: "local -I inherits from enclosing scope"
+  - name: "local -I with a matching explicit array kind inherits value and attributes"
     stdin: |
-      g=global-value
+      declare -ax a=(one two)
+      declare -A m=([k]=v)
       f() {
-          local -I g
-          echo "[$g]"
-      }
-      f
-      echo "[$g]"
-
-  - name: "local -I with append"
-    stdin: |
-      v=base
-      f() {
-          local -I v+=" +more"
-          echo "[$v]"
-      }
-      f
-      echo "[$v]"
-
-  - name: "local -I combined flags (-Ix)"
-    stdin: |
-      f() {
-          local -Ix e
-          declare -p e
+          local -I -a a; declare -p a
+          local -I -A m; declare -p m
       }
       f
 
-  - name: "local -I without an enclosing variable falls through to normal creation"
+  - name: "local -I when a same-name local already exists updates it in place"
     stdin: |
+      v=outer
+      f() { local v=first; local -I v+=suffix; declare -p v; }
+      f
+      declare -p v
+
+  - name: "local without -I does not inherit the enclosing array kind"
+    stdin: |
+      declare -A m=([foo]=x)
+      f() { local m[foo]=y; declare -p m; }
+      f
+      declare -p m
+
+  #
+  # `set -a` gives every variable a declaration creates or modifies the export attribute.
+  # That includes a `local -I` that updates a same-name local already in the current scope.
+  #
+  - name: "local -I over a same-scope local honors set -a auto-export"
+    stdin: |
+      v=outer
+      f() { local v=first; set -a; local -I v+=suffix; declare -p v; }
+      f
+
+  #
+  # Dynamic variables (DIRSTACK and friends) resolve to real values when inherited. The element
+  # count is compared to its own pre-inheritance value rather than pinned; the count itself is
+  # covered separately (see "DIRSTACK includes the current directory").
+  #
+  - name: "local -I -a over a dynamic variable inherits its resolved contents"
+    stdin: |
+      mkdir sub
+      pushd sub > /dev/null
+      before=${#DIRSTACK[@]}
+      f() { local -I -a DIRSTACK; echo "inherited_all=$(( ${#DIRSTACK[@]} == before ))"; }
+      f
+
+  #
+  # `local -g` declares into the global scope instead of the function's own, the way `declare -g`
+  # does. brush's `local` always creates a local, so `-g` is silently ignored: the variable
+  # disappears when the function returns, and a same-name local is written instead of the global.
+  #
+  - name: "local -g creates a global rather than a local"
+    known_failure: true # TODO(local): `local -g` is ignored; the declaration is always local
+    stdin: |
+      f() { local -g g=1; }
+      f
+      declare -p g
+
+  - name: "local -g updates the global while a same-name local shadows it"
+    known_failure: true # TODO(local): `local -g` is ignored; the declaration is always local
+    stdin: |
+      h=outer
       f() {
-          local -I nosuch="fresh"
-          echo "[$nosuch]"
+          local h=inner
+          local -g h=global
+          echo "inside: $h"
       }
       f
+      echo "outside: $h"
+
+  - name: "local -g carries its attributes and array kind to the global"
+    known_failure: true # TODO(local): `local -g` is ignored; the declaration is always local
+    stdin: |
+      f() {
+          local -gx s=str
+          local -g -a arr=(x y)
+      }
+      f
+      declare -p s arr
+
+  - name: "local -g with a bare name declares an unset global"
+    known_failure: true # TODO(local): `local -g` is ignored; the declaration is always local
+    stdin: |
+      f() { local -g bare; }
+      f
+      declare -p bare
+      echo "status=$?"

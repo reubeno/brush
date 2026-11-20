@@ -134,3 +134,13 @@ pub fn resolve_executable(path: std::path::PathBuf) -> Option<std::path::PathBuf
         None
     }
 }
+
+/// Resolves a path to a potential executable.
+///
+/// Platforms without PATHEXT resolution leave the path unchanged.
+pub(crate) fn resolve_executable_path(
+    path: std::path::PathBuf,
+    _working_dir: &std::path::Path,
+) -> std::path::PathBuf {
+    path
+}

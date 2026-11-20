@@ -553,7 +553,8 @@ fn cacheable_parse(
     Ok(pieces)
 }
 
-/// Parse a heredoc body, treating `"` and `'` as literal characters.
+/// Parse a heredoc body, treating `"` and `'` as literal characters. The same as
+/// [`parse_double_quoted_text`] with [`DoubleQuotedTextKind::HereDoc`].
 ///
 /// # Arguments
 ///
@@ -563,8 +564,123 @@ pub fn parse_heredoc(
     word: &str,
     options: &ParserOptions,
 ) -> Result<Vec<WordPieceWithSource>, error::WordParseError> {
-    expansion_parser::unexpanded_heredoc_word(word, options)
-        .map_err(|err| error::WordParseError::Word(word.to_owned(), err.into()))
+    parse_double_quoted_text(word, DoubleQuotedTextKind::HereDoc, options)
+}
+
+/// A kind of double-quoted text whose quotes are elsewhere.
+///
+/// See [`parse_double_quoted_text`]. In all of them only `$`, `` ` `` and `\` are
+/// special and `'` is an ordinary character. They differ in what else a backslash
+/// escapes, whether `"` is text, and whether `$'...'` and `$"..."` are quotes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum DoubleQuotedTextKind {
+    /// The body of a here document: a backslash escapes only `$`, `` ` `` and `\`, and
+    /// `"`, `$'...'` and `$"..."` are text.
+    HereDoc,
+    /// A prompt string (`PS1` and its like): as a here document body, except that `\"`
+    /// stands for `"` and a backslash and the newline after it yield nothing.
+    Prompt,
+    /// The word of a parameter expansion (`${param:-word}` and its like) within a here
+    /// document body or a prompt: as a prompt, except that its own `"` are removed
+    /// rather than being text, `\}` stands for `}`, and between a pair of its quotes a
+    /// backslash escapes any character.
+    WordInHereDocOrPrompt,
+    /// The word of such a parameter expansion within double quotes
+    /// (`"${param:-word}"`): as [`Self::WordInHereDocOrPrompt`], except that outside
+    /// the word's own quotes `$'...'` is ANSI-C quoted text and `$"..."` a
+    /// double-quoted string to translate.
+    WordInDoubleQuotes,
+}
+
+/// The rules the grammar applies to a kind of double-quoted text; see
+/// [`DoubleQuotedTextKind`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct DoubleQuotedTextRules {
+    /// Whether `\"` stands for `"`.
+    escaped_quotes: bool,
+    /// Whether a backslash and the newline after it yield nothing.
+    line_continuations: bool,
+    /// Whether an unescaped `"` is removed instead of being text, `\}` stands for `}`,
+    /// and between a pair of quotes a backslash escapes any character.
+    quotes_removed: bool,
+    /// Whether, outside a pair of quotes, `$'...'` is ANSI-C quoted text and `$"..."`
+    /// a double-quoted string to translate.
+    dollar_quotes: bool,
+}
+
+impl DoubleQuotedTextKind {
+    pub(crate) const fn rules(self) -> DoubleQuotedTextRules {
+        match self {
+            Self::HereDoc => DoubleQuotedTextRules {
+                escaped_quotes: false,
+                line_continuations: false,
+                quotes_removed: false,
+                dollar_quotes: false,
+            },
+            Self::Prompt => DoubleQuotedTextRules {
+                escaped_quotes: true,
+                line_continuations: true,
+                quotes_removed: false,
+                dollar_quotes: false,
+            },
+            Self::WordInHereDocOrPrompt => DoubleQuotedTextRules {
+                escaped_quotes: true,
+                line_continuations: true,
+                quotes_removed: true,
+                dollar_quotes: false,
+            },
+            Self::WordInDoubleQuotes => DoubleQuotedTextRules {
+                escaped_quotes: true,
+                line_continuations: true,
+                quotes_removed: true,
+                dollar_quotes: true,
+            },
+        }
+    }
+}
+
+/// Parse double-quoted text that doesn't include the quotes enclosing it.
+///
+/// Such text is a here document body, a prompt, or the word of a parameter expansion
+/// nested in either of those or in double quotes. The kind says how its backslashes
+/// and quotes are read.
+///
+/// The pieces returned are of the kinds [`parse`] finds between a pair of double quotes.
+///
+/// # Arguments
+///
+/// * `text` - The text to parse.
+/// * `kind` - The kind of text.
+/// * `options` - The parser options to use.
+pub fn parse_double_quoted_text(
+    text: &str,
+    kind: DoubleQuotedTextKind,
+    options: &ParserOptions,
+) -> Result<Vec<WordPieceWithSource>, error::WordParseError> {
+    expansion_parser::unexpanded_double_quoted_text(text, options, &kind.rules())
+        .map_err(|err| error::WordParseError::Word(text.to_owned(), err.into()))
+}
+
+impl DoubleQuotedTextKind {
+    /// Quotes text so that [`parse_double_quoted_text`] reads it, as text of this kind,
+    /// as exactly the text given: a backslash goes before each character that is
+    /// special in text of this kind.
+    ///
+    /// # Arguments
+    ///
+    /// * `text` - The text to quote.
+    pub fn quote(self, text: &str) -> String {
+        let rules = self.rules();
+        let mut quoted = String::with_capacity(text.len());
+        for c in text.chars() {
+            if matches!(c, '$' | '`' | '\\') || (c == '"' && rules.escaped_quotes) {
+                quoted.push('\\');
+            }
+            quoted.push(c);
+        }
+        quoted
+    }
 }
 
 /// Parse the given word into a parameter expression.
@@ -597,8 +713,7 @@ pub fn parse_brace_expansions(
 
 /// Parses a scalar assignment from a given word.
 ///
-/// A parenthesized value is treated as scalar text; see
-/// [`parse_compound_assignment_value`] for reinterpreting such a value as a compound one.
+/// A parenthesized value is treated as scalar text.
 ///
 /// # Arguments
 ///
@@ -623,7 +738,11 @@ pub fn parse_scalar_assignment(
 /// * `value` - The candidate compound value text, including its enclosing parentheses.
 /// * `options` - The parser options to use.
 #[must_use]
-pub fn parse_compound_assignment_value(
+#[allow(
+    dead_code,
+    reason = "kept for upcoming callers; crate-private until its error handling is settled"
+)]
+pub(crate) fn parse_compound_assignment_value(
     value: &str,
     options: &ParserOptions,
 ) -> Option<Vec<(Option<ast::Word>, ast::Word)>> {
@@ -657,9 +776,9 @@ pub(crate) fn parse_array_assignment(
     })
 }
 
-/// Parses one bound of a numeric brace sequence, e.g. `-007`.
+/// Parses one bound of a numeric brace sequence, e.g. `-007`, or its increment.
 ///
-/// Returns `None` when the bound does not fit in an `i64`, which lets the sequence
+/// Returns `None` when the number does not fit in an `i64`, which lets the sequence
 /// rule decline rather than panic on something like `{99999999999999999999..1}`.
 ///
 /// The sign goes to the parser along with the digits, so `i64::MIN` is accepted even
@@ -732,7 +851,7 @@ peg::parser! {
         pub(crate) rule unexpanded_word() -> Vec<WordPieceWithSource> = traced(<word(<![_]>)>)
 
         rule word<T>(stop_condition: rule<T>) -> Vec<WordPieceWithSource> =
-            tilde:tilde_expr_prefix_with_source()? pieces:word_piece_with_source(<stop_condition()>, false /*in_command*/)* {
+            tilde:tilde_expr_prefix_with_source()? pieces:word_piece_with_source(<stop_condition()>)* {
                 let mut all_pieces = Vec::new();
                 if let Some(tilde) = tilde {
                     all_pieces.push(tilde);
@@ -756,10 +875,14 @@ peg::parser! {
 
         // Parses text that is not considered to contain a brace expression.
         rule non_brace_expr_text<T>(stop_condition: rule<T>) -> () =
-            !"{" word_piece(<['{'] {} / stop_condition() {}>, false) {} /
+            !"{" word_piece(<['{'] {} / stop_condition() {}>) {} /
             !brace_expr() !stop_condition() "{" {}
 
         // Parses a complete brace expression, with no prefix or suffix.
+        // Cached: each `{` is tried both as the start of a brace expression and as plain text,
+        // and every attempt re-parses the rest of the word, so a run of unterminated `{`
+        // would otherwise take time exponential in its length.
+        #[cache]
         pub(crate) rule brace_expr() -> BraceExpression =
             "{" inner:brace_expr_inner() "}" { inner }
 
@@ -785,17 +908,27 @@ peg::parser! {
                 BraceExpressionMember::Child(child_pieces)
             }
 
+        // As in bash 5.3, a sequence with an increment of `i64::MIN` is left as text,
+        // whichever way it goes: its magnitude can't be taken without overflowing.
         pub(crate) rule brace_sequence_expr() -> BraceExpressionMember =
-            start:sequence_bound() ".." end:sequence_bound() increment:(".." n:number() { n })? {
-                BraceExpressionMember::NumberSequence {
-                    start: start.0,
-                    end: end.0,
-                    increment: increment.unwrap_or(1),
-                    zero_padded_width: zero_padded_width(start.1, end.1),
+            start:sequence_bound() ".." end:sequence_bound() increment:(".." n:number() { n })? {?
+                if increment == Some(i64::MIN) {
+                    Err("increment out of range")
+                } else {
+                    Ok(BraceExpressionMember::NumberSequence {
+                        start: start.0,
+                        end: end.0,
+                        increment: increment.unwrap_or(1),
+                        zero_padded_width: zero_padded_width(start.1, end.1),
+                    })
                 }
             } /
-            start:character() ".." end:character() increment:(".." n:number() { n })? {
-                BraceExpressionMember::CharSequence { start, end, increment: increment.unwrap_or(1) }
+            start:character() ".." end:character() increment:(".." n:number() { n })? {?
+                if increment == Some(i64::MIN) {
+                    Err("increment out of range")
+                } else {
+                    Ok(BraceExpressionMember::CharSequence { start, end, increment: increment.unwrap_or(1) })
+                }
             }
 
         // A bound of a numeric sequence, kept alongside the text it was written as.
@@ -805,10 +938,10 @@ peg::parser! {
             parse_sequence_bound(text).map(|n| (n, text)).ok_or("number out of range")
         }
 
-        rule number() -> i64 = sign:number_sign()? n:$(['0'..='9']+) {
-            let sign = sign.unwrap_or(1);
-            let num: i64 = n.parse().unwrap();
-            num * sign
+        // The increment of a brace sequence. One that does not fit in an `i64` makes
+        // the sequence rule decline, so the expression is left as text, as bash does.
+        rule number() -> i64 = text:$(number_sign()? ['0'..='9']+) {?
+            parse_sequence_bound(text).ok_or("number out of range")
         }
 
         rule number_sign() -> i64 =
@@ -838,13 +971,13 @@ peg::parser! {
             // into us, because if we see an opening parenthesis then we *must* find its closing
             // partner.
             "(" arithmetic_word_plus_right_paren() {} /
-            // This branch handles the case where we have an array element name with square brackets,
-            // which may (legitimately) contain the stop condition.
+            // An array subscript may contain the stop condition. Other brackets are left
+            // as text, so malformed arithmetic doesn't fall back to command substitution.
             array_element_name() {} /
             // This branch matches any standard piece of a word, stopping as soon as we reach
             // either the overall stop condition *OR* an opening parenthesis. We add this latter
             // condition to ensure that *we* handle matching parentheses.
-            !"(" word_piece(<param_rule_or_open_paren(<stop_condition()>)>, false /*in_command*/) {}
+            !"(" word_piece(<param_rule_or_open_paren(<stop_condition()>)>) {}
 
         // This is a helper rule that matches either the provided stop condition or an opening parenthesis.
         rule param_rule_or_open_paren<T>(stop_condition: rule<T>) -> () =
@@ -855,12 +988,12 @@ peg::parser! {
         rule arithmetic_word_plus_right_paren() =
             arithmetic_word(<[')']>) ")"
 
-        rule word_piece_with_source<T>(stop_condition: rule<T>, in_command: bool) -> WordPieceWithSource =
-            start_index:position!() piece:word_piece(<stop_condition()>, in_command) end_index:position!() {
+        rule word_piece_with_source<T>(stop_condition: rule<T>) -> WordPieceWithSource =
+            start_index:position!() piece:word_piece(<stop_condition()>) end_index:position!() {
                 WordPieceWithSource { piece, start_index, end_index }
             }
 
-        rule word_piece<T>(stop_condition: rule<T>, in_command: bool) -> WordPiece =
+        rule word_piece<T>(stop_condition: rule<T>) -> WordPiece =
             // Rules that match quoted text.
             s:double_quoted_sequence() { WordPiece::DoubleQuotedSequence(s) } /
             s:single_quoted_literal_text() { WordPiece::SingleQuotedText(s.to_owned()) } /
@@ -873,7 +1006,7 @@ peg::parser! {
             // Allow tilde expression to be matched as a word piece (for tilde-after-colon expansion)
             enabled_tilde_expr_after_colon() /
             // Finally, match unquoted literal text.
-            unquoted_literal_text(<stop_condition()>, in_command)
+            unquoted_literal_text(<stop_condition()>)
 
         rule dollar_sign_word_piece() -> WordPiece =
             arithmetic_expansion() /
@@ -910,13 +1043,10 @@ peg::parser! {
         rule ansi_c_quoted_text() -> &'input str =
             r"$'" inner:$((r"\\" / r"\'" / [^'\''])*) r"'" { inner }
 
-        rule unquoted_literal_text<T>(stop_condition: rule<T>, in_command: bool) -> WordPiece =
-            s:$(unquoted_literal_text_piece(<stop_condition()>, in_command)+) { WordPiece::Text(s.to_owned()) }
+        rule unquoted_literal_text<T>(stop_condition: rule<T>) -> WordPiece =
+            s:$(unquoted_literal_text_piece(<stop_condition()>)+) { WordPiece::Text(s.to_owned()) }
 
-        // TODO(parser): Find a way to remove the special-case logic for extglob + subshell commands
-        rule unquoted_literal_text_piece<T>(stop_condition: rule<T>, in_command: bool) =
-            is_true(in_command) extglob_pattern() /
-            is_true(in_command) subshell_command() /
+        rule unquoted_literal_text_piece<T>(stop_condition: rule<T>) =
             !stop_condition() !normal_escape_sequence() !enabled_tilde_expr_after_colon() [^'\'' | '\"' | '$' | '`'] {}
 
         rule enabled_tilde_expr_after_colon() -> WordPiece =
@@ -936,50 +1066,77 @@ peg::parser! {
             }
         }}
 
-        rule is_true(value: bool) = &[_] {? if value { Ok(()) } else { Err("not true") } }
-
-        rule extglob_pattern() =
-            ("@" / "!" / "?" / "+" / "*") "(" extglob_body_piece()* ")" {}
-
-        rule extglob_body_piece() =
-            word_piece(<[')']>, true /*in_command*/) {}
-
-        rule subshell_command() =
-            "(" command() ")" {}
-
         rule double_quoted_text() -> WordPiece =
             s:double_quote_body_text() { WordPiece::Text(s.to_owned()) }
 
         rule double_quote_body_text() -> &'input str =
-            $((!double_quoted_escape_sequence() !dollar_sign_word_piece() [^'\"'])+)
+            $((!double_quoted_escape_sequence() !dollar_sign_word_piece() !expansion_opener() [^'\"'])+)
 
-        // Heredoc body parsing: like double-quoted content, but " and ' are literal characters.
-        pub(crate) rule unexpanded_heredoc_word() -> Vec<WordPieceWithSource> =
-            traced(<heredoc_word(<![_]>)>)
+        // Double-quoted text that doesn't include the quotes enclosing it (a heredoc body, a
+        // prompt, a word nested in a parameter expansion that is itself double-quoted).
+        pub(crate) rule unexpanded_double_quoted_text(o: &DoubleQuotedTextRules) -> Vec<WordPieceWithSource> =
+            runs:quoted_text_run(o)* ![_] { runs.into_iter().flatten().collect() }
 
-        rule heredoc_word<T>(stop_condition: rule<T>) -> Vec<WordPieceWithSource> =
-            pieces:heredoc_word_piece_with_source(<stop_condition()>)* { pieces }
+        // Either the text between a pair of quotes that are themselves removed, or one piece.
+        // (A pair left open runs to the end of the text.)
+        rule quoted_text_run(o: &DoubleQuotedTextRules) -> Vec<WordPieceWithSource> =
+            quotes_removed(o) "\"" pieces:quoted_text_piece_with_source(o, true)* "\""? {
+                pieces.into_iter().flatten().collect()
+            } /
+            piece:quoted_text_piece_with_source(o, false) { piece.into_iter().collect() }
 
-        rule heredoc_word_piece_with_source<T>(stop_condition: rule<T>) -> WordPieceWithSource =
-            !stop_condition() start_index:position!() piece:heredoc_word_piece() end_index:position!() {
-                WordPieceWithSource { piece, start_index, end_index }
+        rule quoted_text_piece_with_source(o: &DoubleQuotedTextRules, between_quotes: bool) -> Option<WordPieceWithSource> =
+            start_index:position!() piece:quoted_text_piece(o, between_quotes) end_index:position!() {
+                piece.map(|piece| WordPieceWithSource { piece, start_index, end_index })
             }
 
-        rule heredoc_word_piece() -> WordPiece =
-            arithmetic_expansion() /
-            legacy_arithmetic_expansion() /
-            command_substitution() /
-            parameter_expansion() /
-            heredoc_escape_sequence() /
-            heredoc_literal_text()
+        // Yields `None` for text that is consumed without contributing a piece.
+        rule quoted_text_piece(o: &DoubleQuotedTextRules, between_quotes: bool) -> Option<WordPiece> =
+            line_continuation(o) { None } /
+            piece:arithmetic_expansion() { Some(piece) } /
+            piece:legacy_arithmetic_expansion() { Some(piece) } /
+            piece:command_substitution() { Some(piece) } /
+            piece:quoted_text_dollar_quoted(o, between_quotes) { Some(piece) } /
+            piece:parameter_expansion() { Some(piece) } /
+            piece:quoted_text_escape_sequence(o, between_quotes) { Some(piece) } /
+            piece:quoted_text_literal(o, between_quotes) { Some(piece) }
 
-        rule heredoc_escape_sequence() -> WordPiece =
-            s:$("\\" ['$' | '`' | '\\']) { WordPiece::EscapeSequence(s.to_owned()) }
+        rule quoted_text_escape_sequence(o: &DoubleQuotedTextRules, between_quotes: bool) -> WordPiece =
+            s:$("\\" ['$' | '`' | '\\']) { WordPiece::EscapeSequence(s.to_owned()) } /
+            escaped_quotes(o) s:$("\\\"") { WordPiece::EscapeSequence(s.to_owned()) } /
+            quotes_removed(o) s:$("\\}") { WordPiece::EscapeSequence(s.to_owned()) } /
+            s:$("\\" [_]) {? if between_quotes { Ok(WordPiece::EscapeSequence(s.to_owned())) } else { Err("escape between quotes") } }
 
-        rule heredoc_literal_text() -> WordPiece =
-            s:$((!heredoc_escape_sequence() !dollar_sign_word_piece() [^'`'])+) {
-                WordPiece::Text(s.to_owned())
-            }
+        rule quoted_text_dollar_quoted(o: &DoubleQuotedTextRules, between_quotes: bool) -> WordPiece =
+            dollar_quotes(o, between_quotes) s:ansi_c_quoted_text() { WordPiece::AnsiCQuotedText(s.to_owned()) } /
+            dollar_quotes(o, between_quotes) s:gettext_double_quoted_sequence() { WordPiece::GettextDoubleQuotedSequence(s) }
+
+        rule quoted_text_literal(o: &DoubleQuotedTextRules, between_quotes: bool) -> WordPiece =
+            s:$((!quoted_text_special(o, between_quotes) [^'`'])+) { WordPiece::Text(s.to_owned()) }
+
+        // What ends a run of literal text.
+        rule quoted_text_special(o: &DoubleQuotedTextRules, between_quotes: bool) =
+            line_continuation(o) {} /
+            quoted_text_escape_sequence(o, between_quotes) {} /
+            quoted_text_dollar_quoted(o, between_quotes) {} /
+            dollar_sign_word_piece() {} /
+            expansion_opener() {} /
+            quotes_removed(o) "\"" {}
+
+        rule line_continuation(o: &DoubleQuotedTextRules) =
+            line_continuations(o) "\\\n"
+
+        rule line_continuations(o: &DoubleQuotedTextRules) =
+            &[_] {? if o.line_continuations { Ok(()) } else { Err("no line continuations") } }
+
+        rule escaped_quotes(o: &DoubleQuotedTextRules) =
+            &[_] {? if o.escaped_quotes { Ok(()) } else { Err("no escaped quotes") } }
+
+        rule quotes_removed(o: &DoubleQuotedTextRules) =
+            &[_] {? if o.quotes_removed { Ok(()) } else { Err("quotes are text") } }
+
+        rule dollar_quotes(o: &DoubleQuotedTextRules, between_quotes: bool) =
+            &[_] {? if o.dollar_quotes && !between_quotes { Ok(()) } else { Err("no dollar quotes") } }
 
         rule normal_escape_sequence() -> WordPiece =
             s:$("\\" [c]) { WordPiece::EscapeSequence(s.to_owned()) }
@@ -1022,6 +1179,10 @@ peg::parser! {
 
         // TODO(parser): Deal with fact that there may be a quoted word or escaped closing brace chars.
         // TODO(parser): Improve on how we handle a '$' not followed by a valid variable name or parameter.
+        // Cached: each `${...}` can match any of ~20 parameter expression forms, and a failure
+        // within one (e.g., an unterminated `$(`) would otherwise be re-discovered by every form
+        // at every enclosing level, taking time exponential in the nesting depth.
+        #[cache]
         rule parameter_expansion() -> WordPiece =
             "${" e:parameter_expression() "}" {
                 WordPiece::ParameterExpansion(e)
@@ -1029,9 +1190,15 @@ peg::parser! {
             "$" parameter:unbraced_parameter() {
                 WordPiece::ParameterExpansion(ParameterExpr::Parameter { parameter, indirect: false })
             } /
-            "$" !['\''] {
+            !expansion_opener() "$" !['\''] {
                 WordPiece::Text("$".to_owned())
             }
+
+        // As in bash, these always start an expansion, whose end the tokenizer finds (so it
+        // always does, in a word the tokenizer accepted). If none parses, the text is malformed
+        // (e.g., unterminated, or nested too deeply), so its `$` mustn't be taken as literal text.
+        // TODO(expansion): #540: the same holds for `${`, which is still taken as text.
+        rule expansion_opener() = "$" ['(' | '[']
 
         rule parameter_expression() -> ParameterExpr =
             indirect:parameter_indirection() parameter:parameter() test_type:parameter_test_type() "-" default_value:parameter_expression_word()? {
@@ -1172,30 +1339,52 @@ peg::parser! {
             $(!['0'..='9'] ['_' | '0'..='9' | 'a'..='z' | 'A'..='Z']+)
 
         pub(crate) rule command_substitution() -> WordPiece =
-            "$(" c:command() ")" { WordPiece::CommandSubstitution(c.to_owned()) } /
+            "$(" c:command_substitution_body() ")" { WordPiece::CommandSubstitution(c.to_owned()) } /
             "`" c:backquoted_command() "`" { WordPiece::BackquotedCommandSubstitution(c) }
 
-        pub(crate) rule command() -> &'input str =
-            $(command_piece()*)
-
-        pub(crate) rule command_piece() -> () =
-            word_piece(<[')']>, true /*in_command*/) {} /
-            ([' ' | '\t'])+ {} /
-            ['\'' | '`'] {}
+        // The tokenizer already has the logic to find where the command ends (e.g., skipping
+        // over here-doc bodies), so we leverage it here. `pos` and `body.len()` are both
+        // byte offsets.
+        rule command_substitution_body() -> &'input str = #{|input, pos| {
+            let rest = input.split_at(pos).1;
+            match crate::tokenizer::command_substitution_body(rest, &parser_options.tokenizer_options()) {
+                Ok(body) => peg::RuleResult::Matched(pos + body.len(), body),
+                Err(_) => peg::RuleResult::Failed,
+            }
+        }}
 
         rule backquoted_command() -> String =
-            chars:(backquoted_char()*) { chars.into_iter().collect() }
+            chars:(backquoted_char()*) {
+                let mut command: String = chars.into_iter().collect();
+                // TODO(tokenizer): A backslash ending the input is reported as an unterminated
+                // escape, where bash takes it literally; escape it so it stays literal.
+                if command.chars().rev().take_while(|c| *c == '\\').count() % 2 == 1 {
+                    command.push('\\');
+                }
+                command
+            }
 
+        // As in bash, a backslash is removed only before `$`, `` ` ``, or `\`. (The tokenizer
+        // already removed line continuations.)
         rule backquoted_char() -> &'input str =
-            "\\`" { "`" } /
-            "\\\\" { "\\\\" } /
+            "\\" s:$(['$' | '`' | '\\']) { s } /
             s:$([^'`']) { s }
 
         rule arithmetic_expansion() -> WordPiece =
             "$((" e:$(arithmetic_word(<"))">)) "))" { WordPiece::ArithmeticExpression(ast::UnexpandedArithmeticExpr { value: e.to_owned() } ) }
 
         rule legacy_arithmetic_expansion() -> WordPiece =
-            "$[" e:$(arithmetic_word(<"]">)) "]" { WordPiece::ArithmeticExpression(ast::UnexpandedArithmeticExpr { value: e.to_owned() } ) }
+            "$[" e:legacy_arithmetic_expansion_body() "]" { WordPiece::ArithmeticExpression(ast::UnexpandedArithmeticExpr { value: e.to_owned() } ) }
+
+        // Reuse the tokenizer's iterative bracket counting rather than recursively parsing
+        // each bracket in the expression. As with command substitutions, preserve the source.
+        rule legacy_arithmetic_expansion_body() -> &'input str = #{|input, pos| {
+            let rest = input.split_at(pos).1;
+            match crate::tokenizer::legacy_arithmetic_expansion_body(rest, &parser_options.tokenizer_options()) {
+                Ok(body) => peg::RuleResult::Matched(pos + body.len(), body),
+                Err(_) => peg::RuleResult::Failed,
+            }
+        }}
 
         rule substring_offset() -> ast::UnexpandedArithmeticExpr =
             s:$(arithmetic_word(<[':' | '}']>)) { ast::UnexpandedArithmeticExpr { value: s.to_owned() } }
@@ -1380,9 +1569,6 @@ mod tests {
 
     #[test]
     fn parse_command_substitution() -> Result<()> {
-        super::expansion_parser::command_piece("echo", &ParserOptions::default())?;
-        super::expansion_parser::command_piece("hi", &ParserOptions::default())?;
-        super::expansion_parser::command("echo hi", &ParserOptions::default())?;
         super::expansion_parser::command_substitution("$(echo hi)", &ParserOptions::default())?;
 
         assert_ron_snapshot!(test_parse("$(echo hi)")?);
@@ -1392,15 +1578,18 @@ mod tests {
 
     #[test]
     fn parse_command_substitution_with_embedded_quotes() -> Result<()> {
-        super::expansion_parser::command_piece("echo", &ParserOptions::default())?;
-        super::expansion_parser::command_piece(r#""hi""#, &ParserOptions::default())?;
-        super::expansion_parser::command(r#"echo "hi""#, &ParserOptions::default())?;
         super::expansion_parser::command_substitution(
             r#"$(echo "hi")"#,
             &ParserOptions::default(),
         )?;
 
         assert_ron_snapshot!(test_parse(r#"$(echo "hi")"#)?);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_command_substitution_with_multibyte_chars() -> Result<()> {
+        assert_ron_snapshot!(test_parse("é$(echo “ü”)ñ")?);
         Ok(())
     }
 
@@ -1453,6 +1642,28 @@ mod tests {
     }
 
     #[test]
+    fn parse_backquoted_command_escapes() -> Result<()> {
+        for (input, expected) in [
+            (r"`printf \\2`", r"printf \2"),
+            (r"`printf \\\\2`", r"printf \\2"),
+            (r#"`echo \$x \` \" \a`"#, r#"echo $x ` \" \a"#),
+            // A backslash left ending the command is escaped to keep it literal.
+            (r"`printf \\`", r"printf \\"),
+            (r"`printf \\\\`", r"printf \\"),
+            (r"`printf \\\\\\`", r"printf \\\\"),
+        ] {
+            let parsed = super::parse(input, &ParserOptions::default())?;
+            assert_matches!(
+                &parsed[..],
+                [WordPieceWithSource { piece: WordPiece::BackquotedCommandSubstitution(command), .. }]
+                    if command == expected,
+                "parsing {input:?}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
     fn parse_extglob_with_embedded_parameter() -> Result<()> {
         assert_ron_snapshot!(test_parse("+([$var])")?);
         Ok(())
@@ -1467,6 +1678,294 @@ mod tests {
     #[test]
     fn parse_arithmetic_expansion_with_parens() -> Result<()> {
         assert_ron_snapshot!(test_parse("$((((1+2)*3)))")?);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_arithmetic_expansion_with_unmatched_brackets() -> Result<()> {
+        // Invalid arithmetic must stay arithmetic, rather than fall back to executing
+        // the expression as a command substitution.
+        for expr in ["echo unexpected [", "1[", "a[1", "[ ["] {
+            let word = std::format!("$(({expr}))");
+            let parsed = super::parse(&word, &ParserOptions::default())?;
+            assert_matches!(
+                parsed.as_slice(),
+                [WordPieceWithSource { piece: WordPiece::ArithmeticExpression(e), .. }] if e.value == expr,
+                "for {word:?}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_arithmetic_expansion_with_deep_brackets() -> Result<()> {
+        // Brackets in the expression must not grow the word parser's call stack.
+        // Arithmetic evaluation can reject this expression after its boundaries are found.
+        let expr = std::format!("{}1{}", "[".repeat(15_000), "]".repeat(15_000));
+        for (open, close) in [("$((", "))"), ("$[", "]")] {
+            let word = std::format!("{open}{expr}{close}");
+            let parsed = super::parse(&word, &ParserOptions::default())?;
+            assert_matches!(
+                parsed.as_slice(),
+                [WordPieceWithSource { piece: WordPiece::ArithmeticExpression(e), .. }] if e.value == expr
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_legacy_arithmetic_expansion_with_array_subscripts() -> Result<()> {
+        for (word, expr) in [
+            ("$[a[1]]", "a[1]"),
+            ("$[ a[1] + 1 ]", " a[1] + 1 "),
+            ("$[ a[ a[0] ] ]", " a[ a[0] ] "),
+            ("$[ a[$[1]] + $(printf 2) ]", " a[$[1]] + $(printf 2) "),
+            ("$[ 'é]' ]", " 'é]' "),
+            ("$[ \\] ]", " \\] "),
+        ] {
+            let parsed = super::parse(word, &ParserOptions::default())?;
+            assert_matches!(
+                parsed.as_slice(),
+                [WordPieceWithSource { piece: WordPiece::ArithmeticExpression(e), .. }] if e.value == expr,
+                "for {word:?}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_malformed_expansions_as_errors() {
+        // As in bash, a `$` before `(` or `[` always starts an expansion; if none parses, the
+        // text is malformed, not literal text.
+        let options = ParserOptions::default();
+        for word in ["a$(echo", "\"$(echo\"", "$((1 +", "$[1 +", "\"a $[1 + b\""] {
+            assert!(super::parse(word, &options).is_err(), "for {word:?}");
+        }
+        for body in [
+            "a $(echo hi\n",
+            "a $(echo 'b) c\n",
+            "a $((1 + b\n",
+            "a $[1 + b\n",
+        ] {
+            assert!(
+                super::parse_heredoc(body, &options).is_err(),
+                "for {body:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_malformed_expansions_nested_in_parameter_expansions_quickly() {
+        // Each `${...}` can match any of ~20 parameter expression forms; unless its parse is
+        // memoized, a failure within (e.g., an unterminated `$(`) is re-discovered by each form,
+        // taking time exponential in the nesting depth.
+        let options = ParserOptions::default();
+        let nested =
+            |inner: &str| std::format!("{}{inner}{}\n", "${x:-".repeat(30), "}".repeat(30));
+        assert!(super::parse_heredoc(&nested("$(echo"), &options).is_err());
+        assert!(super::parse_heredoc(&nested("$((1 +"), &options).is_err());
+        assert!(super::parse(&std::format!("\"{}\"", nested("$[1").trim_end()), &options).is_err());
+    }
+
+    #[test]
+    fn parse_lone_dollar_signs_as_text() -> Result<()> {
+        let options = ParserOptions::default();
+        for word in [
+            "$", "a$", "$ b", "$%", "\"$\"", "\"a$ b\"", "\"$'x'\"", "${x}$",
+        ] {
+            super::parse(word, &options)?;
+        }
+        super::parse_heredoc("cost: $5 $ $% \"$'x'\" a$\n", &options)?;
+        Ok(())
+    }
+
+    fn quoted_text(text: &str, kind: DoubleQuotedTextKind) -> Result<Vec<WordPiece>> {
+        let pieces = super::parse_double_quoted_text(text, kind, &ParserOptions::default())?;
+        Ok(pieces.into_iter().map(|piece| piece.piece).collect())
+    }
+
+    fn text(s: &str) -> WordPiece {
+        WordPiece::Text(s.to_owned())
+    }
+
+    fn escape(s: &str) -> WordPiece {
+        WordPiece::EscapeSequence(s.to_owned())
+    }
+
+    #[test]
+    fn parse_double_quoted_text_as_heredoc_body() -> Result<()> {
+        use DoubleQuotedTextKind::HereDoc;
+
+        // Quotes are text, and a backslash is an escape only before `$`, `` ` `` and `\`.
+        assert_eq!(
+            quoted_text(r#"a "b" 'c' \" \$ \z \\ $'d'"#, HereDoc)?,
+            [
+                text(r#"a "b" 'c' \" "#),
+                escape(r"\$"),
+                text(r" \z "),
+                escape(r"\\"),
+                text(" $'d'"),
+            ]
+        );
+        assert_eq!(quoted_text("a\\\nb", HereDoc)?, [text("a\\\nb")]);
+        assert_eq!(quoted_text(r"a\}b", HereDoc)?, [text(r"a\}b")]);
+        assert_eq!(
+            super::parse_heredoc("a \"$x\" b\n", &ParserOptions::default())?,
+            super::parse_double_quoted_text("a \"$x\" b\n", HereDoc, &ParserOptions::default())?
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn parse_double_quoted_text_as_prompt() -> Result<()> {
+        use DoubleQuotedTextKind::Prompt;
+
+        // `\"` is an escape; a quote is still text.
+        assert_eq!(
+            quoted_text(r#"a\"b"c"#, Prompt)?,
+            [text("a"), escape(r#"\""#), text(r#"b"c"#)]
+        );
+        // `\\` is split off first, so the quote after it is not escaped.
+        assert_eq!(
+            quoted_text(r#"a\\"b"#, Prompt)?,
+            [text("a"), escape(r"\\"), text(r#""b"#)]
+        );
+
+        // A backslash and the newline after it yield nothing.
+        assert_eq!(quoted_text("a\\\nb", Prompt)?, [text("a"), text("b")]);
+        assert_eq!(quoted_text("\\\n", Prompt)?, []);
+        // An escaped backslash doesn't continue the line.
+        assert_eq!(
+            quoted_text("a\\\\\nb", Prompt)?,
+            [text("a"), escape(r"\\"), text("\nb")]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn parse_double_quoted_text_as_word_in_heredoc_or_prompt() -> Result<()> {
+        use DoubleQuotedTextKind::WordInHereDocOrPrompt as Word;
+
+        // The word's own quotes are removed.
+        assert_eq!(
+            quoted_text(r#"a"b c"d"#, Word)?,
+            [text("a"), text("b c"), text("d")]
+        );
+        assert_eq!(quoted_text(r#""it's""#, Word)?, [text("it's")]);
+        assert_eq!(quoted_text(r#""""#, Word)?, []);
+        assert_eq!(quoted_text("", Word)?, []);
+
+        // Outside the quotes a backslash also escapes `"` and `}`; between them, anything.
+        assert_eq!(
+            quoted_text(r#"a\zb\}c\"d"#, Word)?,
+            [
+                text(r"a\zb"),
+                escape(r"\}"),
+                text("c"),
+                escape(r#"\""#),
+                text("d")
+            ]
+        );
+        assert_eq!(
+            quoted_text(r#""a\zb\'c""#, Word)?,
+            [
+                text("a"),
+                escape(r"\z"),
+                text("b"),
+                escape(r"\'"),
+                text("c")
+            ]
+        );
+
+        // A pair of quotes may enclose expansions, and a pair left open runs to the end.
+        let pieces = quoted_text(r#"x"a $y b"z"#, Word)?;
+        assert_eq!(pieces.len(), 5);
+        assert_eq!(pieces[1], text("a "));
+        assert_matches!(pieces[2], WordPiece::ParameterExpansion(_));
+        assert_eq!(pieces[3], text(" b"));
+        assert_eq!(quoted_text(r#"a"b"#, Word)?, [text("a"), text("b")]);
+
+        // `$'...'` is text, as in the body.
+        assert_eq!(quoted_text(r"a$'b\tc'd", Word)?, [text(r"a$'b\tc'd")]);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_double_quoted_text_as_word_in_double_quotes() -> Result<()> {
+        use DoubleQuotedTextKind::WordInDoubleQuotes as Word;
+
+        // As a word in a here doc, except that `$'...'` and `$"..."` are quotes.
+        assert_eq!(
+            quoted_text(r"a$'b\tc'd", Word)?,
+            [
+                text("a"),
+                WordPiece::AnsiCQuotedText(r"b\tc".to_owned()),
+                text("d")
+            ]
+        );
+        let pieces = quoted_text(r#"a$"b"c"#, Word)?;
+        assert_eq!(pieces.len(), 3);
+        assert_matches!(&pieces[1], WordPiece::GettextDoubleQuotedSequence(inner) if inner.len() == 1);
+        // Not between the word's own quotes, though, where a backslash escapes anything.
+        assert_eq!(
+            quoted_text(r#""$'a\x41b'""#, Word)?,
+            [text("$'a"), escape(r"\x"), text("41b'")]
+        );
+        assert_eq!(quoted_text(r#""it's""#, Word)?, [text("it's")]);
+        assert_eq!(
+            quoted_text(r#"a\}b\"c"#, Word)?,
+            [
+                text("a"),
+                escape(r"\}"),
+                text("b"),
+                escape(r#"\""#),
+                text("c")
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn quote_double_quoted_text_round_trips() -> Result<()> {
+        use DoubleQuotedTextKind::{HereDoc, Prompt, WordInDoubleQuotes, WordInHereDocOrPrompt};
+
+        // Every character the kind treats as special, and every one it doesn't, comes
+        // back as the text it was.
+        let text: String = (b' '..=b'~').map(char::from).chain(['\t', '\n']).collect();
+        let text = text + r#"$'a\x41b' $"loc" \" \} \\" "#;
+        for kind in [HereDoc, Prompt, WordInHereDocOrPrompt, WordInDoubleQuotes] {
+            let mut read_back = String::new();
+            for piece in super::parse_double_quoted_text(
+                &kind.quote(&text),
+                kind,
+                &ParserOptions::default(),
+            )? {
+                match piece.piece {
+                    WordPiece::Text(s) => read_back.push_str(&s),
+                    WordPiece::EscapeSequence(s) => read_back.push_str(
+                        s.strip_prefix('\\')
+                            .ok_or_else(|| anyhow::anyhow!("{kind:?}: bad escape {s:?}"))?,
+                    ),
+                    other => anyhow::bail!("{kind:?}: {other:?} is not literal text"),
+                }
+            }
+            assert_eq!(read_back, text, "{kind:?}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_heredoc_with_command_substitutions_nested_too_deeply() -> Result<()> {
+        // Here-doc bodies aren't tokenized along with the script, so the word parser is the
+        // first to find nesting past the tokenizer's limit; that's an error, not literal text.
+        let nested = |depth: u32| {
+            let depth = depth as usize;
+            std::format!("{}:{}\n", "$(".repeat(depth), ")".repeat(depth))
+        };
+        let limit = crate::tokenizer::MAX_EXPANSION_NESTING;
+        let options = ParserOptions::default();
+        super::parse_heredoc(&nested(limit), &options)?;
+        assert!(super::parse_heredoc(&nested(limit + 1), &options).is_err());
         Ok(())
     }
 
@@ -1514,6 +2013,75 @@ mod tests {
                 || anyhow::anyhow!("Expected brace expansion to be parsed successfully")
             )?);
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn brace_sequence_with_out_of_range_increment_is_text() -> Result<()> {
+        let options = ParserOptions::default();
+
+        for input in [
+            "{1..5..99999999999999999999}",
+            "{1..5..-99999999999999999999}",
+            "{a..e..99999999999999999999}",
+            // No sequence steps by `i64::MIN`, whose magnitude overflows.
+            "{1..5..-9223372036854775808}",
+            "{5..1..-9223372036854775808}",
+            "{3..3..-9223372036854775808}",
+            "{a..e..-9223372036854775808}",
+            "{e..a..-9223372036854775808}",
+        ] {
+            let pieces = super::parse_brace_expansions(input, &options)?.unwrap_or_default();
+            assert!(
+                pieces
+                    .iter()
+                    .all(|piece| matches!(piece, BraceExpressionOrText::Text(_))),
+                "{input} should not parse as a brace sequence: {pieces:?}"
+            );
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn parse_runs_of_unterminated_braces_quickly() -> Result<()> {
+        // Each `{` is tried both as the start of a brace expression and as plain text; unless
+        // the brace expression parse is memoized, that takes time exponential in the length
+        // of the run.
+        let options = ParserOptions::default();
+        let run = "{".repeat(30);
+
+        let word = std::format!("{run}.");
+        let pieces = super::parse_brace_expansions(&word, &options)?.unwrap_or_default();
+        assert_eq!(pieces, vec![BraceExpressionOrText::Text(word)]);
+
+        // A complete brace expression after the run is still found.
+        let word = std::format!("{run}{{a,b}}");
+        let pieces = super::parse_brace_expansions(&word, &options)?.unwrap_or_default();
+        assert_eq!(
+            pieces,
+            vec![
+                BraceExpressionOrText::Text(run.clone()),
+                BraceExpressionOrText::Expr(vec![
+                    BraceExpressionMember::Child(vec![BraceExpressionOrText::Text("a".into())]),
+                    BraceExpressionMember::Child(vec![BraceExpressionOrText::Text("b".into())]),
+                ]),
+            ]
+        );
+
+        // So is one that encloses the run.
+        let word = std::format!("{{a,{run}b}}");
+        let pieces = super::parse_brace_expansions(&word, &options)?.unwrap_or_default();
+        assert_eq!(
+            pieces,
+            vec![BraceExpressionOrText::Expr(vec![
+                BraceExpressionMember::Child(vec![BraceExpressionOrText::Text("a".into())]),
+                BraceExpressionMember::Child(vec![BraceExpressionOrText::Text(std::format!(
+                    "{run}b"
+                ))]),
+            ])]
+        );
 
         Ok(())
     }

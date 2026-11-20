@@ -134,7 +134,6 @@ cases:
       echo "should not print"
 
   - name: "errtrace with errexit in function"
-    known_failure: true # TODO(traps): ERR trap not firing in function with errexit
     stdin: |
       set -e
       set -E

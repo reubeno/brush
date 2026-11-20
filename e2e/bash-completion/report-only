@@ -1,0 +1,4 @@
+# Report-only: test failures are counted in the dashboard (with a pass rate) but do not fail the
+# run. Upstream's own @pytest.mark.xfail markers are the only expectations; there is no
+# xfail-list.txt. The run still fails when the image cannot be built, the suite times out, or it
+# leaves no JUnit.

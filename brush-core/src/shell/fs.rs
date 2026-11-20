@@ -65,6 +65,8 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     pub fn tilde_shorten(&self, s: String) -> String {
         if let Some(home_dir) = self.home_dir()
             && let Some(stripped) = s.strip_prefix(home_dir.to_string_lossy().as_ref())
+            // Home must match whole path components: /home/user is not a prefix of /home/users.
+            && (stripped.is_empty() || stripped.starts_with(std::path::is_separator))
         {
             return format!("~{stripped}");
         }
@@ -190,6 +192,25 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             .set(candidate_name, found_path.clone());
 
         Some(found_path)
+    }
+
+    /// Resolves the name of an external command to the program to run, as running
+    /// the command would: a name with a path separator is a path, relative to the
+    /// working directory; any other is looked up in `PATH`, as
+    /// [`Self::resolve_command_in_path_using_cache`] does.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the command.
+    pub fn resolve_external_command(&mut self, name: &str) -> Option<PathBuf> {
+        if crate::sys::fs::contains_path_separator(name) {
+            Some(crate::sys::fs::resolve_executable_path(
+                PathBuf::from(name),
+                self.working_dir(),
+            ))
+        } else {
+            self.resolve_command_in_path_using_cache(name)
+        }
     }
 
     /// Gets the absolute form of the given path.

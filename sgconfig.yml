@@ -1,0 +1,5 @@
+# ast-grep (https://ast-grep.github.io) project config: structural lint rules,
+# run by the ast-grep hooks in .pre-commit-config.yaml.
+ruleDirs: [.config/ast-grep/rules]
+testConfigs:
+  - testDir: .config/ast-grep/rule-tests

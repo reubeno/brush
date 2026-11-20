@@ -484,3 +484,41 @@ fn report_results_junit(results: Vec<TestCaseSetResults>, options: &TestOptions)
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::comparison::{ExpectationComparison, TestComparison};
+    use clap::Parser as _;
+
+    #[test]
+    fn reports_pty_transcripts_holding_backslashes() {
+        // A failing case's pty transcripts, which are reported even when ignored, may hold
+        // backslashes that don't start escapes.
+        let transcript = "test$ echo 'a\\q\\$b'\n";
+        let mut oracle = OracleComparison::ignored();
+        oracle.stdout = StringComparison::Ignored {
+            test_string: transcript.into(),
+            oracle_string: transcript.into(),
+        };
+        oracle.temp_dir = DirComparison::TestDiffers(vec![]);
+        let result = TestCaseResult {
+            name: Some("case".into()),
+            success: false,
+            skip: false,
+            known_failure: false,
+            comparison: TestComparison {
+                oracle: Some(oracle),
+                expectation: ExpectationComparison::not_specified(),
+                duration: std::time::Duration::default(),
+            },
+        };
+
+        let mut report = Vec::new();
+        result
+            .write_details(&mut report, &TestOptions::parse_from(["test"]))
+            .unwrap();
+        let report = String::from_utf8(report).unwrap();
+        assert!(report.contains("a\\q\\$b"), "unexpected report: {report}");
+    }
+}

@@ -10,6 +10,16 @@ pub(crate) fn continue_process(pid: sys::process::ProcessId) -> Result<(), error
     Ok(())
 }
 
+/// Continues every process in a process group.
+///
+/// # Arguments
+/// * `pgid` - The process group's ID.
+pub(crate) fn continue_process_group(pgid: sys::process::ProcessId) -> Result<(), error::Error> {
+    nix::sys::signal::killpg(nix::unistd::Pid::from_raw(pgid), nix::sys::signal::SIGCONT)
+        .map_err(|_errno| error::ErrorKind::FailedToSendSignal)?;
+    Ok(())
+}
+
 /// Sends a signal to a specific process.
 ///
 /// # Arguments
@@ -19,20 +29,75 @@ pub fn kill_process(
     pid: sys::process::ProcessId,
     signal: traps::TrapSignal,
 ) -> Result<(), error::Error> {
-    let translated_signal = match signal {
-        traps::TrapSignal::Signal(signal) => signal,
+    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), real_signal(signal)?)
+        .map_err(|_errno| error::ErrorKind::FailedToSendSignal)?;
+
+    Ok(())
+}
+
+/// Sends a signal to every process in a process group.
+///
+/// # Arguments
+/// * `pgid` - The process group's ID.
+/// * `signal` - The signal to send (must be a real signal, not a trap signal)
+pub(crate) fn kill_process_group(
+    pgid: sys::process::ProcessId,
+    signal: traps::TrapSignal,
+) -> Result<(), error::Error> {
+    nix::sys::signal::killpg(nix::unistd::Pid::from_raw(pgid), real_signal(signal)?)
+        .map_err(|_errno| error::ErrorKind::FailedToSendSignal)?;
+
+    Ok(())
+}
+
+/// Returns whether a stopped process sent the given signal must be continued for it to act on
+/// it, as bash continues a stopped job sent SIGTERM or SIGHUP: some systems leave those pending
+/// until then.
+pub(crate) const fn continue_stopped_on(signal: traps::TrapSignal) -> bool {
+    matches!(
+        signal,
+        traps::TrapSignal::Signal(Signal::SIGTERM | Signal::SIGHUP)
+    )
+}
+
+fn real_signal(signal: traps::TrapSignal) -> Result<Signal, error::Error> {
+    match signal {
+        traps::TrapSignal::Signal(signal) => Ok(signal),
         traps::TrapSignal::Debug
         | traps::TrapSignal::Err
         | traps::TrapSignal::Exit
         | traps::TrapSignal::Return => {
-            return Err(error::ErrorKind::InvalidSignal(signal.to_string()).into());
+            Err(error::ErrorKind::InvalidSignal(signal.to_string()).into())
         }
-    };
+    }
+}
 
-    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), translated_signal)
-        .map_err(|_errno| error::ErrorKind::FailedToSendSignal)?;
-
+/// Checks whether a specific process exists and can be signaled.
+///
+/// # Arguments
+/// * `pid` - The process ID to signal-zero check.
+pub fn check_signalable(pid: sys::process::ProcessId) -> Result<(), error::Error> {
+    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None).map_err(signal_error)?;
     Ok(())
+}
+
+/// Checks whether a process group exists and can be signaled.
+///
+/// # Arguments
+/// * `pgid` - The process group's ID.
+pub(crate) fn check_process_group_signalable(
+    pgid: sys::process::ProcessId,
+) -> Result<(), error::Error> {
+    nix::sys::signal::killpg(nix::unistd::Pid::from_raw(pgid), None).map_err(signal_error)?;
+    Ok(())
+}
+
+const fn signal_error(errno: nix::errno::Errno) -> error::ErrorKind {
+    match errno {
+        nix::errno::Errno::ESRCH => error::ErrorKind::NoSuchProcess,
+        nix::errno::Errno::EPERM => error::ErrorKind::PermissionDenied,
+        _ => error::ErrorKind::FailedToSendSignal,
+    }
 }
 
 pub(crate) fn lead_new_process_group() -> Result<(), error::Error> {
@@ -52,7 +117,7 @@ pub(crate) fn chld_signal_listener() -> Result<tokio::signal::unix::Signal, erro
     Ok(signal)
 }
 
-pub(crate) use tokio::signal::ctrl_c as await_ctrl_c;
+pub use tokio::signal::ctrl_c as await_ctrl_c;
 
 pub(crate) fn mask_sigttou() -> Result<(), error::Error> {
     let ignore = nix::sys::signal::SigAction::new(
@@ -72,11 +137,21 @@ pub(crate) fn mask_sigttou() -> Result<(), error::Error> {
     Ok(())
 }
 
-pub(crate) fn poll_for_stopped_children() -> Result<bool, error::Error> {
+/// Returns whether the given child process has stopped, consuming its stop status, and leaving
+/// other children's stops to whoever waits on them. On NetBSD and OpenBSD, where one child
+/// can't be looked at (see `waitid_one`), any child's stop counts, as before.
+///
+/// # Arguments
+///
+/// * `pid` - The child's process ID.
+pub(crate) fn poll_for_stopped_children(
+    pid: sys::process::ProcessId,
+) -> Result<bool, error::Error> {
     let mut found_stopped = false;
 
     loop {
-        let wait_status = waitid_all(
+        let wait_status = waitid_for(
+            pid,
             nix::sys::wait::WaitPidFlag::WUNTRACED | nix::sys::wait::WaitPidFlag::WNOHANG,
         );
         match wait_status {
@@ -92,11 +167,59 @@ pub(crate) fn poll_for_stopped_children() -> Result<bool, error::Error> {
     Ok(found_stopped)
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "netbsd", target_os = "openbsd")))]
-fn waitid_all(
+/// Returns whether the given child process has stopped since that was last
+/// reported. Doesn't reap the child if it has exited.
+///
+/// # Arguments
+///
+/// * `pid` - The child's process ID.
+pub(crate) fn poll_for_stopped_child(pid: sys::process::ProcessId) -> Result<bool, error::Error> {
+    let flags = nix::sys::wait::WaitPidFlag::WUNTRACED | nix::sys::wait::WaitPidFlag::WNOHANG;
+    match waitid_one(pid, flags) {
+        Ok(nix::sys::wait::WaitStatus::Stopped(..)) => Ok(true),
+        Ok(_) | Err(nix::errno::Errno::ECHILD) => Ok(false),
+        Err(e) => Err(e.into()),
+    }
+}
+
+#[cfg(not(any(target_os = "netbsd", target_os = "openbsd")))]
+fn waitid_for(
+    pid: sys::process::ProcessId,
     flags: nix::sys::wait::WaitPidFlag,
 ) -> Result<nix::sys::wait::WaitStatus, nix::errno::Errno> {
-    nix::sys::wait::waitid(nix::sys::wait::Id::All, flags)
+    waitid_one(pid, flags)
+}
+
+// There's no looking at one child on NetBSD/OpenBSD (see `waitid_one`), so look at any
+// child, as before.
+#[cfg(any(target_os = "netbsd", target_os = "openbsd"))]
+fn waitid_for(
+    _pid: sys::process::ProcessId,
+    flags: nix::sys::wait::WaitPidFlag,
+) -> Result<nix::sys::wait::WaitStatus, nix::errno::Errno> {
+    waitid_all(flags)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "netbsd", target_os = "openbsd")))]
+fn waitid_one(
+    pid: sys::process::ProcessId,
+    flags: nix::sys::wait::WaitPidFlag,
+) -> Result<nix::sys::wait::WaitStatus, nix::errno::Errno> {
+    nix::sys::wait::waitid(
+        nix::sys::wait::Id::Pid(nix::unistd::Pid::from_raw(pid)),
+        flags,
+    )
+}
+
+// nix does not expose `waitid` on NetBSD/OpenBSD, and `waitpid` would reap a child
+// that has exited, so don't look.
+#[cfg(any(target_os = "netbsd", target_os = "openbsd"))]
+#[allow(clippy::unnecessary_wraps, reason = "matches other platforms")]
+const fn waitid_one(
+    _pid: sys::process::ProcessId,
+    _flags: nix::sys::wait::WaitPidFlag,
+) -> Result<nix::sys::wait::WaitStatus, nix::errno::Errno> {
+    Ok(nix::sys::wait::WaitStatus::StillAlive)
 }
 
 // nix does not expose `waitid` on NetBSD/OpenBSD; `waitpid` for any child is
@@ -115,7 +238,18 @@ fn waitid_all(
 //
 
 #[cfg(target_os = "macos")]
-fn waitid_all(
+fn waitid_one(
+    pid: sys::process::ProcessId,
+    flags: nix::sys::wait::WaitPidFlag,
+) -> Result<nix::sys::wait::WaitStatus, nix::errno::Errno> {
+    #[expect(clippy::cast_sign_loss, reason = "process IDs are positive")]
+    waitid_macos(nix::libc::P_PID, pid as nix::libc::id_t, flags)
+}
+
+#[cfg(target_os = "macos")]
+fn waitid_macos(
+    idtype: nix::libc::idtype_t,
+    id: nix::libc::id_t,
     flags: nix::sys::wait::WaitPidFlag,
 ) -> Result<nix::sys::wait::WaitStatus, nix::errno::Errno> {
     // SAFETY:
@@ -128,7 +262,7 @@ fn waitid_all(
     // SAFETY:
     // Code copied from nix::sys::wait implementation of waitid for other platforms.
     nix::errno::Errno::result(unsafe {
-        nix::libc::waitid(nix::libc::P_ALL, 0, &raw mut siginfo, flags.bits())
+        nix::libc::waitid(idtype, id, &raw mut siginfo, flags.bits())
     })?;
 
     siginfo_to_wait_status(siginfo)

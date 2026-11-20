@@ -9,6 +9,27 @@ use crate::ShellFd;
 use crate::error;
 use crate::openfiles;
 
+/// Replaces the current process with `command`. Returns only if that fails, with
+/// the reason why.
+pub(crate) fn exec(mut command: std::process::Command) -> std::io::Error {
+    CommandExt::exec(&mut command)
+}
+
+/// Returns the standard stream for a process to have `file` as: the shell's own
+/// output streams as they are, and any other file as a duplicate of its descriptor,
+/// so that the shell's stdin can be an output stream of the process's (e.g., for
+/// `>&0`), and a custom stream the process's too.
+pub(crate) fn stdio_for(file: openfiles::OpenFile) -> std::io::Result<std::process::Stdio> {
+    match file {
+        openfiles::OpenFile::Stdout(s) => Ok(s.into()),
+        openfiles::OpenFile::Stderr(s) => Ok(s.into()),
+        file => Ok(file
+            .try_clone_to_owned()
+            .map_err(std::io::Error::other)?
+            .into()),
+    }
+}
+
 /// Extension trait for injecting file descriptors into commands.
 pub trait CommandFdInjectionExt {
     /// Injects the given open files as file descriptors into the command.

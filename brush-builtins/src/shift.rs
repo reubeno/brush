@@ -1,25 +1,34 @@
-use clap::Parser;
+use std::io::Write;
 
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins};
 
 /// Shift positional arguments.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct ShiftCommand {
     /// Number of positions to shift the arguments by (defaults to 1).
+    #[arg(positional, allow_negative_numbers)]
     n: Option<i32>,
 }
 
-impl builtins::Command for ShiftCommand {
+brush_winnow_args_adapter::impl_parse_args!(ShiftCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ShiftCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let n = self.n.unwrap_or(1);
 
         if n < 0 {
-            return Ok(ExecutionExitCode::InvalidUsage.into());
+            writeln!(
+                context.stderr(),
+                "{}: {n}: shift count out of range",
+                context.command_name
+            )?;
+            return Ok(ExecutionResult::general_error());
         }
 
         #[expect(clippy::cast_sign_loss)]

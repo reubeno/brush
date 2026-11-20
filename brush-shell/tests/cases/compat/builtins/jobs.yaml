@@ -4,3 +4,145 @@ cases:
     stdin: |
       echo hi &
       wait
+
+  - name: "fg resumes a stopped job without a terminal to give it"
+    ignore_stderr: true
+    stdin: |
+      set -m
+      sh -c 'kill -STOP $$; echo resumed'
+      fg >/dev/null
+      echo "fg: $?"
+
+  - name: "fg resumes every process of a stopped job"
+    ignore_stderr: true
+    stdin: |
+      set -m
+      sh -c '(kill -STOP 0; echo child resumed); echo parent resumed'
+      fg >/dev/null
+      echo "fg: $?"
+
+  - name: "bg on a job already in the background says so"
+    ignore_stderr: true
+    stdin: |
+      set -m
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      sleep 1 &
+      bg %1 2>err.txt; echo "bg: $?"; strip < err.txt
+      wait %1
+      rm err.txt
+
+  - name: "fg without a current job reports on stderr"
+    ignore_stderr: true
+    stdin: |
+      fg
+      echo "fg: $?"
+
+  - name: "fg and bg report a job that doesn't exist on stderr, naming the builtin first"
+    # The leading "file: line N:" a shell prefixes is stripped.
+    stdin: |
+      set -m
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      fg %5 2>err.txt; echo "fg: $?"; strip < err.txt
+      bg %5 2>err.txt; echo "bg: $?"; strip < err.txt
+      rm err.txt
+
+  - name: "fg without job control says so"
+    known_failure: true # TODO(jobs): brush doesn't check for job control
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      fg %5 2>err.txt; echo "fg: $?"; strip < err.txt
+      rm err.txt
+
+  - name: "An interactive shell without a terminal has no job control"
+    known_failure: true # TODO(jobs): brush turns job control on for an interactive shell even when it can't take the terminal
+    ignore_stderr: true # bash says why it has no job control
+    args:
+      - "-i"
+      - "-c"
+      - 'case $- in *m*) echo "job control";; *) echo "no job control";; esac'
+
+  - name: "Job builtins fail with status 1 for a job that doesn't exist"
+    known_failure: true # TODO(jobs): brush returns 99 (unimplemented)
+    ignore_stderr: true
+    stdin: |
+      jobs %9
+      echo "jobs: $?"
+      disown %9
+      echo "disown: $?"
+
+  - name: "Job builtins check for job control before their options"
+    known_failure: true # TODO(jobs): brush reads options first
+    ignore_stderr: true
+    stdin: |
+      fg -Z
+      echo "fg: $?"
+      bg -Z
+      echo "bg: $?"
+      disown -Z
+      echo "disown: $?"
+
+  - name: "wait returns once a job stops, and the job stays stopped"
+    known_failure: true # TODO(jobs): wait doesn't return for a job that stops, and fg can't continue it
+    ignore_stderr: true
+    stdin: |
+      set -m
+      sh -c 'kill -STOP $$; echo resumed' &
+      wait %1; echo "wait: $?"
+      jobs -s >stopped.txt; echo "stopped: $(( $(wc -l <stopped.txt) ))"
+      fg >/dev/null; echo "fg: $?"
+      rm stopped.txt
+
+  - name: "fg notices a job it continued stopping again"
+    known_failure: true # TODO(jobs): wait doesn't return for a job that stops, and fg can't continue it
+    ignore_stderr: true
+    stdin: |
+      set -m
+      sh -c 'kill -STOP $$; kill -STOP $$; echo resumed' &
+      wait %1; echo "wait: $?"
+      fg >/dev/null; echo "fg: $?"
+      fg >/dev/null; echo "fg: $?"
+
+  # The group is read from /proc: the test environments don't all have `ps`.
+  - name: "set -m gives a job a process group of its own"
+    known_failure: true # TODO(jobs): job control turned on mid-run doesn't change the process groups of what runs
+    incompatible_platforms: ["macos"]
+    stdin: |
+      set -m; sh -c 'read -r _ _ _ _ pgid _ < /proc/$$/stat; [ "$pgid" -eq $$ ] && echo own-group'
+
+  - name: "wait for every job reports none of them"
+    known_failure: true # TODO(wait): under job control, wait prints the jobs it waited for
+    stdin: |
+      set -m
+      true &
+      wait
+      echo done
+
+  - name: "wait for a job that's stopped returns at once"
+    known_failure: true # TODO(jobs): wait doesn't return for a job that stops, and fg can't continue it
+    ignore_stderr: true
+    stdin: |
+      set -m
+      sh -c 'kill -STOP $$; echo resumed' &
+      wait %1; echo "first: $?"
+      wait %1; echo "again: $?"
+      kill -9 %1
+
+  - name: "wait for every job leaves out the stopped ones"
+    known_failure: true # TODO(jobs): wait doesn't return for a job that stops, and fg can't continue it
+    ignore_stderr: true
+    stdin: |
+      set -m
+      sh -c 'kill -STOP $$; echo resumed' &
+      wait %1
+      sleep 0.1 &
+      wait >/dev/null; echo "all: $?"
+      jobs -s >stopped.txt; echo "stopped: $(( $(wc -l <stopped.txt) ))"
+      kill -9 %1
+      rm stopped.txt
+
+  - name: "jobs in a pipeline lists the shell's jobs"
+    known_failure: true # TODO(jobs): a pipeline stage's copy of the shell has no jobs to list
+    stdin: |
+      sleep 0.3 &
+      jobs | wc -l
+      wait

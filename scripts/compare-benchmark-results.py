@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 import argparse
 import re
+import sys
 from dataclasses import dataclass
 from typing import Dict
 
@@ -35,6 +36,12 @@ def parse_benchmarks_results(file_path: str) -> Dict[str, Benchmark]:
 
 base_results = parse_benchmarks_results(args.base_results_file_path)
 test_results = parse_benchmarks_results(args.test_results_file_path)
+
+# An empty report looks like "no change", so refuse to produce one.
+for path, results in ((args.base_results_file_path, base_results), (args.test_results_file_path, test_results)):
+    if not results:
+        print(f"error: no benchmark results found in {path}", file=sys.stderr)
+        sys.exit(1)
 
 base_test_names = set(base_results.keys())
 test_test_names = set(test_results.keys())

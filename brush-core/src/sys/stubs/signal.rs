@@ -36,6 +36,17 @@ pub(crate) fn continue_process(_pid: sys::process::ProcessId) -> Result<(), erro
     Err(error::ErrorKind::NotSupportedOnThisPlatform("continuing process").into())
 }
 
+pub(crate) fn continue_process_group(_pgid: sys::process::ProcessId) -> Result<(), error::Error> {
+    Err(error::ErrorKind::NotSupportedOnThisPlatform("continuing process group").into())
+}
+
+/// Checks whether a specific process exists and can be signaled.
+///
+/// This is a stub implementation that returns an error.
+pub fn check_signalable(_pid: sys::process::ProcessId) -> Result<(), error::Error> {
+    Err(error::ErrorKind::NotSupportedOnThisPlatform("checking process").into())
+}
+
 /// Sends a signal to a specific process.
 ///
 /// This is a stub implementation that returns an error.
@@ -44,6 +55,23 @@ pub fn kill_process(
     _signal: traps::TrapSignal,
 ) -> Result<(), error::Error> {
     Err(error::ErrorKind::NotSupportedOnThisPlatform("killing process").into())
+}
+
+pub(crate) fn check_process_group_signalable(
+    _pgid: sys::process::ProcessId,
+) -> Result<(), error::Error> {
+    Err(error::ErrorKind::NotSupportedOnThisPlatform("checking process group").into())
+}
+
+pub(crate) fn kill_process_group(
+    _pgid: sys::process::ProcessId,
+    _signal: traps::TrapSignal,
+) -> Result<(), error::Error> {
+    Err(error::ErrorKind::NotSupportedOnThisPlatform("killing process group").into())
+}
+
+pub(crate) const fn continue_stopped_on(_signal: traps::TrapSignal) -> bool {
+    false
 }
 
 pub(crate) fn lead_new_process_group() -> Result<(), error::Error> {
@@ -70,7 +98,8 @@ pub(crate) fn chld_signal_listener() -> Result<FakeSignal, error::Error> {
     Ok(FakeSignal::new())
 }
 
-pub(crate) async fn await_ctrl_c() -> std::io::Result<()> {
+/// Waits for Ctrl-C; on this platform, it never arrives.
+pub async fn await_ctrl_c() -> std::io::Result<()> {
     FakeSignal::new().recv().await;
     Ok(())
 }
@@ -79,6 +108,12 @@ pub(crate) fn mask_sigttou() -> Result<(), error::Error> {
     Ok(())
 }
 
-pub(crate) fn poll_for_stopped_children() -> Result<bool, error::Error> {
+pub(crate) fn poll_for_stopped_children(
+    _pid: sys::process::ProcessId,
+) -> Result<bool, error::Error> {
+    Ok(false)
+}
+
+pub(crate) fn poll_for_stopped_child(_pid: sys::process::ProcessId) -> Result<bool, error::Error> {
     Ok(false)
 }

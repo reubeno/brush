@@ -4,11 +4,15 @@
 
 **brush** (Bourne Rusty Shell) is a POSIX- and bash-compatible shell implemented in Rust. It's a multi-crate workspace (~60K lines of Rust code) targeting Linux, macOS, and WSL, with experimental Windows and WASM support. The project emphasizes compatibility testing against bash as an oracle.
 
-**Key Stats:** Rust 2024 edition, MSRV 1.88.0, 5 main crates, 1500+ compatibility test cases, published to crates.io.
+**Key Stats:** Rust 2024 edition, 5 main crates, 1500+ compatibility test cases, published to crates.io. The workspace MSRV is the `rust-version` under `[workspace.package]` in the root `Cargo.toml`; the application-tier crates (brush, brush-shell, brush-interactive, brush-fuzz) declare a higher one in their own manifests. See `docs/reference/msrv-policy.md`.
 
 ## Critical: Read AGENTS.md First
 
 **BEFORE making any changes, read `/AGENTS.md`.** It contains detailed architecture patterns, testing workflows, and development guidelines specific to this project. The information below supplements (not replaces) AGENTS.md.
+
+Before investigating or implementing, also read the canonical
+[independent-implementation and provenance policy](../CONTRIBUTING.md#independent-implementation-and-provenance)
+required by `AGENTS.md`. Apply it to delegated agents and their tools.
 
 ## Code Review Checklist
 
@@ -61,15 +65,20 @@ The project provides a `cargo xtask` command that centralizes common development
 # Run quick inner-loop checks (~7s warm): fmt, build, lint, unit tests
 cargo xtask ci quick
 
-# Run full pre-commit checks (~45s warm): quick + deps, schemas, integration tests
-cargo xtask ci pre-commit
+# Run the full workflow (~60s warm): quick + pre-commit hooks, schemas, integration tests
+cargo xtask ci full
 
 # Run with --continue-on-error to see all failures at once
-cargo xtask ci pre-commit -k
+cargo xtask ci full -k
 
 # Add -v for verbose output showing exact commands being run
-cargo xtask -v ci pre-commit
+cargo xtask -v ci full
 ```
+
+`cargo xtask ci quick` needs only the Rust toolchain. `cargo xtask ci full` also
+needs `prek` on `PATH` (see CONTRIBUTING.md for install commands). If `prek` is
+unavailable in your environment, run `cargo xtask ci full --no-hooks`; CI
+still runs the hooks.
 
 #### Individual Checks
 
@@ -80,8 +89,11 @@ cargo xtask check fmt
 # Lint check (clippy)
 cargo xtask check lint
 
-# Dependency check (cargo-deny)
-cargo xtask check deps
+# Pre-commit hooks (file hygiene, typos, zizmor, lychee, cargo-deny)
+cargo xtask check hooks
+
+# One hook, by id or alias
+cargo xtask check hooks deps
 
 # Build check
 cargo xtask check build
@@ -127,8 +139,6 @@ cargo test --package brush-parser
 cargo test --package brush-core
 ```
 
-**Note:** `cargo fmt --check` may show warnings about unstable rustfmt features (`wrap_comments`, `comment_width`) on stable Rust. These are harmless and expected.
-
 ### Comprehensive Testing Workflow
 
 Follow this **exact order** for efficient testing:
@@ -156,10 +166,10 @@ Follow this **exact order** for efficient testing:
 
 ### Pre-Commit Validation (Before Every Commit)
 
-**Recommended:** Run the xtask pre-commit workflow:
+**Recommended:** Run the xtask quick workflow:
 
 ```bash
-cargo xtask ci pre-commit
+cargo xtask ci quick
 ```
 
 **Manual approach:** Run these before every commit:
@@ -171,13 +181,13 @@ cargo clippy --workspace --all-features --all-targets
 
 ### Pre-PR Validation (Before Opening Pull Request)
 
-**Recommended:** Run pre-commit checks which includes full test suite:
+**Recommended:** Run the full workflow, which includes the full test suite:
 
 ```bash
-cargo xtask ci pre-commit
+cargo xtask ci full
 ```
 
-**Manual approach:** In addition to pre-commit checks, also run:
+**Manual approach:** In addition to the full workflow, also run:
 
 ```bash
 cargo test --workspace
@@ -185,23 +195,23 @@ cargo test --workspace
 
 ### Pre-Finish Quality Gates (Run Before Completing Task)
 
-**Recommended:** Run the xtask pre-commit workflow which covers all essential checks:
+**Recommended:** Run the xtask full workflow, which covers all essential checks:
 
 ```bash
-cargo xtask ci pre-commit
+cargo xtask ci full
 ```
 
 **Manual approach:**
 
 ```bash
 cargo test --test brush-compat-tests
-cargo deny check all       # License/security audit (run LAST, not frequently)
 cargo clippy --workspace --all-features --all-targets
 cargo fmt --check --all
 cargo test --workspace
+cargo xtask check hooks  # typos, zizmor, lychee, cargo-deny, file hygiene (run LAST, not frequently)
 ```
 
-**Timing note:** `cargo deny check all` takes ~1-5 seconds. Only run as final validation step.
+**Timing note:** `cargo xtask check hooks` takes a few seconds once its hook environments are cached; the first run builds cargo-deny from source. Only run as a final validation step, and skip it with `cargo xtask ci full --no-hooks` if `prek` is unavailable.
 
 ### Build Variants
 
@@ -233,7 +243,7 @@ cargo check --all-features --all-targets
 ### ❌ Don't Do This
 - Run full test suite on every change (too slow)
 - Skip `cargo fmt` and `cargo clippy` before committing
-- Use `cargo deny check` during development iteration
+- Run `cargo xtask check hooks` during development iteration (it is a pre-PR check)
 - Clone values unnecessarily (use references)
 - Add breaking changes to public APIs without highlighting them
 - Forget to add compat test cases for compatibility fixes
@@ -280,24 +290,25 @@ The project uses **extremely strict** linting (workspace-level in `Cargo.toml`):
 ## Cross-Platform Considerations
 
 - Primary targets: Linux (x86_64, aarch64), macOS (aarch64)
-- Secondary: Windows (x86_64), WASM (wasm32-unknown-unknown, wasm32-wasip2)
+- Secondary: Windows (x86_64), WASM (wasm32-unknown-unknown, wasm32-wasip3)
 - Platform-specific code goes in `brush-core/src/sys/` modules
 - Use `cfg(unix)`, `cfg(windows)`, `cfg(target_family = "wasm")` appropriately
 - See `.cargo/config.toml` for target-specific configurations
 
 ## CI Pipeline (What Will Run on Your PR)
 
-GitHub Actions runs these checks (from `.github/workflows/ci.yaml`):
+GitHub Actions runs these checks (from `.github/workflows/`):
 
 1. **Build** on multiple platforms (x86_64/aarch64 Linux, macOS, Windows, WASM)
 2. **Tests** on Linux x86_64, Linux aarch64, macOS
-3. **Static checks** (format, clippy, cargo-deny) on stable + MSRV (1.88.0)
-4. **Compatibility tests** with bash as oracle
-5. **Code coverage** reports (70% overall threshold, no 5% negative delta)
-6. **External test suites** (bash-completion test suite)
-7. **OS compatibility** (Arch, Debian, Fedora, NixOS, openSUSE)
-8. **Benchmarks** (performance regression detection on PRs)
-9. **Public API analysis** (breaking change detection)
+3. **Static checks** (format, clippy) on stable + the workspace MSRV; the MSRV leg excludes the application-tier crates
+4. **Pre-commit hooks** (`cargo xtask check hooks`: file hygiene, typos, zizmor, lychee, cargo-deny), in their own workflow
+5. **Compatibility tests** with bash as oracle
+6. **Code coverage** reports (70% overall threshold, no 5% negative delta)
+7. **External test suites** (bash-completion test suite)
+8. **OS compatibility** (Arch, Debian, Fedora, NixOS, openSUSE)
+9. **Benchmarks** (performance regression detection on PRs)
+10. **Public API analysis** (breaking change detection)
 
 **All of these must pass for PR to merge.**
 
@@ -371,7 +382,7 @@ Assisted-by: GitHub Copilot
 1. **Test failures:** Focus on affected area first, check if new tests are needed
 2. **Format/clippy failures:** Fix immediately before proceeding
 3. **Compat test failures:** Indicates shell behavior change, may need test updates
-4. **Build failures:** Check dependencies, verify Rust version (1.88.0+)
+4. **Build failures:** Check dependencies, verify the toolchain satisfies the `rust-version` of the crate being built
 5. **Timeout issues:** Build from scratch can take 2+ minutes
 
 ## Quick Reference
@@ -379,15 +390,15 @@ Assisted-by: GitHub Copilot
 | Command | When | Time |
 |---------|------|------|
 | `cargo xtask ci quick` | Rapid iteration (inner loop) | ~7s |
-| `cargo xtask ci pre-commit` | Before commit (comprehensive) | ~45s |
-| `cargo xtask ci pre-commit -k` | See all failures at once | ~45s |
+| `cargo xtask ci full` | Before opening a PR (comprehensive) | ~60s |
+| `cargo xtask ci full -k` | See all failures at once | ~60s |
 | `cargo check` | Constantly during dev | ~3-5s |
 | `cargo test --package X` | After each change | 3-20s |
 | `cargo xtask test unit` | Fast unit tests | ~4.5s |
 | `cargo xtask test integration` | All workspace tests | ~36s |
 | `cargo xtask check fmt` | Before every commit | <1s |
 | `cargo xtask check lint` | Before commit | ~5-10s |
-| `cargo xtask check deps` | Final validation only | ~1-5s |
+| `cargo xtask check hooks` | Final validation only | ~1-5s once cached |
 
 ## Trust These Instructions
 

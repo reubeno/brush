@@ -87,3 +87,97 @@ cases:
       wait
       echo 2 &
       wait
+
+  - name: "Kill a background pipeline by job spec"
+    known_failure: true # TODO(jobs): a background job isn't tied to its processes, so `kill %1` fails, and the job runs to completion
+    ignore_stderr: true
+    stdin: |
+      sleep 3 | sleep 3 &
+      kill %1
+      wait %1
+      echo "status: $?"
+
+  - name: "$! names the last background job's process"
+    known_failure: true # TODO(jobs): a background job isn't tied to its processes, so `$!` is empty
+    stdin: |
+      sleep 0.1 &
+      if [ -n "$!" ] && kill -0 "$!"; then echo "running"; fi
+      wait
+
+  - name: "Background job started in a pipeline stage"
+    known_failure: true # TODO(jobs): the background job's task holds the stage's standard output open, so the next stage waits for the job, though its program writes elsewhere
+    timeout_in_seconds: 2
+    stdin: |
+      { sleep 3 >/dev/null & } | cat
+      echo "done"
+
+  - name: "A background program stops on writing to the terminal, with tostop set"
+    known_failure: true # TODO(jobs): programs inherit the ignored SIGTTOU an interactive shell sets for itself, so the program writes instead
+    pty: true
+    ignore_stdout: true # Prompts and job notices don't line up
+    stdin: |
+      #expect-prompt
+      stty tostop
+      #send:Enter
+      #expect-prompt
+      sh -c 'echo to-terminal; touch written.txt' &
+      #send:Enter
+      #expect-prompt
+      sleep 1
+      #send:Enter
+      #expect-prompt
+      kill -9 %1; stty -tostop
+      #send:Enter
+      #expect-prompt
+      #send:Ctrl+D
+
+  - name: "A background job started in a command substitution runs during it"
+    stdin: |
+      x=$(
+        (sleep 0.1; echo ran > ran.txt) &
+        SECONDS=0
+        while [ ! -e ran.txt ] && [ $SECONDS -lt 3 ]; do :; done
+        [ -e ran.txt ] && echo "ran during the loop"
+        wait
+      )
+      echo "x=$x"
+
+  - name: "A program can signal a job by its $!"
+    known_failure: true # Deliberate (docs/reference/signals.md, "Known differences"): a job's $! is an ID of the shell's own, which no process has
+    ignore_stderr: true
+    stdin: |
+      sleep 0.3 &
+      sh -c "kill -0 $!" && echo "signaled"
+      wait
+
+  # bash forks a subshell for a job of several commands; a signal to its $! ends the subshell
+  # and leaves the program it was running without it. brush's job signals its programs too.
+  - name: "A signal to a compound job's $! leaves its program running"
+    skip: true # TODO(signals): hangs: a wait for a job's program never returns
+    ignore_stderr: true
+    stdin: |
+      { sh -c 'trap "echo got-term; exit 0" TERM; echo $$ > pidfile; while :; do sleep 0.05; done'; } &
+      while [ ! -s pidfile ]; do sleep 0.05; done
+      kill $!
+      wait $!
+      echo "job: $?"
+      sleep 0.2
+      echo "then"
+      kill "$(cat pidfile)"
+      sleep 0.2
+      rm pidfile
+
+  - name: "An error or exit in a background job ends only that job"
+    ignore_stderr: true
+    stdin: |
+      { echo ${y?b}; } &
+      wait
+      echo "after error: $?"
+      eval 'echo ${y?b}' &
+      wait
+      echo "after eval: $?"
+      f() { exit 5; }
+      f &
+      wait
+      echo "after exit: $?"
+

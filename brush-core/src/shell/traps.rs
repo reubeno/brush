@@ -5,14 +5,31 @@ use crate::{ExecutionParameters, ExecutionResult, ProcessGroupPolicy, error, tra
 impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// Runs any exit steps for the shell.
     ///
-    /// This currently includes invoking the `EXIT` trap handler, if any.
+    /// This currently includes invoking the `EXIT` trap handler, if any. If the handler
+    /// exits the shell, its exit status becomes the shell's last exit status.
     pub async fn on_exit(&mut self) -> Result<(), error::Error> {
-        if self.traps.handles(TrapSignal::Exit) {
-            self.invoke_trap_handler(TrapSignal::Exit, &self.default_exec_params())
-                .await?;
+        self.run_exit_trap().await?;
+        Ok(())
+    }
+
+    /// Invokes the `EXIT` trap handler, if any. If the handler exits the shell, returns
+    /// the status it exits with, having made it the shell's last exit status.
+    pub(crate) async fn run_exit_trap(&mut self) -> Result<Option<u8>, error::Error> {
+        if !self.traps.handles(TrapSignal::Exit) {
+            return Ok(None);
         }
 
-        Ok(())
+        let result = self
+            .invoke_trap_handler(TrapSignal::Exit, &self.default_exec_params())
+            .await?;
+
+        if result.is_exit() {
+            let status = result.exit_code.into();
+            self.set_last_exit_status(status);
+            Ok(Some(status))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Invokes the handler registered for `signal`, if any.
@@ -67,24 +84,10 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         let mut params = params.clone();
         params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
 
-        // Preserve $? across trap handler execution so the handler doesn't
-        // clobber the status that triggered it.
-        let orig_last_exit_status = self.last_exit_status;
-
-        // N.B. We use manual enter/leave rather than an RAII guard because a guard
-        // would need to hold `&mut Shell`, preventing the mutable borrow required by
-        // `run_string()`. This is safe because `result` is captured into a variable
-        // (never early-returned with `?`), so `leave_trap_handler()` always runs.
-        self.enter_trap_handler(signal, Some(&handler));
-
-        let result = self
+        // The guard leaves the handler, restoring `$?`, once this finishes -- or is cancelled.
+        self.enter_trap_handler(signal, Some(&handler))
             .run_string(&handler.command, &handler.source_info, &params)
-            .await;
-
-        self.leave_trap_handler();
-        self.last_exit_status = orig_last_exit_status;
-
-        result
+            .await
     }
 
     /// Returns whether the given trap signal is inherited in the current

@@ -1,0 +1,40 @@
+name: "Builtins: shift"
+cases:
+  - name: "shift past the end fails with status 1"
+    known_failure: true # TODO(shift): fails with status 2, where bash fails with 1
+    ignore_stderr: true
+    stdin: |
+      set -- a
+      shift 2
+      echo "shift: $?"
+
+  - name: "A non-numeric shift count is misuse, in bash's words"
+    known_failure: true # TODO(shift): the error is clap's, not bash's `x: numeric argument required`
+    stdin: |
+      strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
+      set -- a b
+      shift x 2>err.txt
+      echo "shift x: $?"
+      strip <err.txt
+      rm err.txt
+
+  - name: "shift with a negative count reports it and fails with status 1"
+    stdin: |
+      set -- a b
+      shift -1 2>err.txt; echo "shift -1: $? $#"
+      [[ -s err.txt ]] && echo "reported"
+      shift -0; echo "shift -0: $? $#"
+      rm err.txt
+
+  - name: "shift takes --"
+    stdin: |
+      set -- a b c
+      shift -- 2; echo "$? $*"
+
+  - name: "shift with too many arguments abandons the rest of the line"
+    known_failure: true # TODO(shift): a usage error with status 2, and the line goes on
+    ignore_stderr: true
+    stdin: |
+      set -- a b
+      shift 1 2; echo "same line: $?"
+      echo "next line: $? $#"

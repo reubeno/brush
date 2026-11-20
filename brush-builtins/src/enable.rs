@@ -1,17 +1,20 @@
 use brush_core::ExecutionResult;
-use clap::Parser;
-use itertools::Itertools;
 use std::io::Write;
 
 use brush_core::builtins;
 use brush_core::error;
 
 /// Enable, disable, or display built-in commands.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EnableCommand {
     /// Print a list of built-in commands.
     #[arg(short = 'a')]
     print_list: bool,
+
+    /// Remove the built-in commands loaded from the indicated object path.
+    #[arg(short = 'd')]
+    remove_loaded_builtin: bool,
 
     /// Disables the specified built-in commands.
     #[arg(short = 'n')]
@@ -29,19 +32,18 @@ pub(crate) struct EnableCommand {
     #[arg(short = 'f', value_name = "PATH")]
     shared_object_path: Option<String>,
 
-    /// Remove the built-in commands loaded from the indicated object path.
-    #[arg(short = 'd')]
-    remove_loaded_builtin: bool,
-
     /// Names of built-in commands to operate on.
+    #[arg(positional)]
     names: Vec<String>,
 }
 
-impl builtins::Command for EnableCommand {
+brush_winnow_args_adapter::impl_parse_args!(EnableCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EnableCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         let mut result = ExecutionResult::success();
@@ -55,37 +57,26 @@ impl builtins::Command for EnableCommand {
 
         if !self.names.is_empty() {
             for name in &self.names {
-                if let Some(builtin) = context.shell.builtin_mut(name) {
-                    builtin.disabled = self.disable;
+                if let Some(builtin) = context.shell.builtins_mut().get_mut(name) {
+                    builtin.set_enabled(!self.disable);
                 } else {
                     writeln!(context.stderr(), "{name}: not a shell builtin")?;
                     result = ExecutionResult::general_error();
                 }
             }
         } else {
-            let builtins: Vec<_> = context
-                .shell
-                .builtins()
-                .iter()
-                .sorted_by_key(|(name, _reg)| *name)
-                .collect();
-
-            for (builtin_name, builtin) in builtins {
-                if self.disable {
-                    if !builtin.disabled {
-                        continue;
-                    }
-                } else if self.print_list {
-                    if builtin.disabled {
-                        continue;
-                    }
-                }
-
-                if self.special_only && !builtin.special_builtin {
+            for (builtin_name, builtin) in context.shell.builtins().iter() {
+                // With -a, every builtin is listed. Otherwise -n lists just the disabled
+                // ones and the default (with or without -p) lists just the enabled ones.
+                if !self.print_list && builtin.is_enabled() == self.disable {
                     continue;
                 }
 
-                let prefix = if builtin.disabled { "-n " } else { "" };
+                if self.special_only && !builtin.is_special() {
+                    continue;
+                }
+
+                let prefix = if !builtin.is_enabled() { "-n " } else { "" };
 
                 writeln!(context.stdout(), "enable {prefix}{builtin_name}")?;
             }

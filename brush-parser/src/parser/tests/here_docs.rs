@@ -127,3 +127,40 @@ EOF
     });
     Ok(())
 }
+
+#[test]
+fn parse_pathological_here_docs() {
+    // Expansions left open around a here-document, including one nested in another. Each must
+    // be reported as an error.
+    let peg = super::ParserConfig {
+        name: "peg",
+        parser_impl: crate::parser::ParserImpl::Peg,
+    };
+    let results: Vec<_> = [
+        "$(cat <<EOF ${y}\nEOF",
+        "echo $(echo $(cat <<EOF) x\nEOF",
+        "echo $(echo $(cat <<EOF)\nbody\nEOF\n",
+    ]
+    .into_iter()
+    .map(|input| {
+        let result = super::parse_with_config(input, &peg);
+        (input, result.map(|_| ()).map_err(|e| e.to_string()))
+    })
+    .collect();
+    insta::assert_ron_snapshot!(results);
+}
+
+#[test]
+fn parse_here_doc_left_open_in_nested_command_substitution() -> Result<()> {
+    // The inner substitution ends before the here-document's body, which follows the line;
+    // bash accepts this (with a warning). The body belongs in the inner substitution's text,
+    // with its operator and tag, and the outer substitution must still end at its own
+    // closing paren, after the body and the command that follows it.
+    let input = "echo $(echo $(cat <<EOF)\nbody\nEOF\necho more\n)\n";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}

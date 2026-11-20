@@ -2,23 +2,19 @@
 
 use std::{
     borrow::Cow,
-    ffi::OsStr,
-    fmt::Display,
+    fmt::{Display, Write as _},
     path::{Path, PathBuf},
-    process::Stdio,
 };
 
 use brush_parser::ast;
-use itertools::Itertools;
-use sys::commands::{CommandExt, CommandFdInjectionExt, CommandFgControlExt};
 
 use crate::{
     ErrorKind, ExecutionControlFlow, ExecutionExitCode, ExecutionParameters, ExecutionResult,
     Shell, ShellFd, builtins, commands, env, error, escape,
-    extensions::{self, ShellExtensions},
+    extensions::{self, ProcessLauncher as _, ShellExtensions, TaskSpawner as _},
     functions,
     interp::{self, Execute, ProcessGroupPolicy},
-    openfiles::{self, OpenFile, OpenFiles},
+    openfiles::{self, OpenFiles},
     pathsearch, processes,
     results::ExecutionSpawnResult,
     sys, trace_categories, traps, variables,
@@ -42,7 +38,43 @@ pub struct ExecutionContext<'a, SE: ShellExtensions = extensions::DefaultShellEx
     pub params: ExecutionParameters,
 }
 
+impl<'a, SE: ShellExtensions> ExecutionContext<'a, SE> {
+    /// Returns a context for running `command_name` in `shell` with `params`;
+    /// e.g., to run a builtin directly, outside of a script.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell to run the command in.
+    /// * `command_name` - The name the command is invoked under.
+    /// * `params` - The parameters to run it with.
+    pub const fn new(
+        shell: &'a mut Shell<SE>,
+        command_name: String,
+        params: ExecutionParameters,
+    ) -> Self {
+        Self {
+            shell,
+            command_name,
+            params,
+        }
+    }
+}
+
 impl<SE: ShellExtensions> ExecutionContext<'_, SE> {
+    /// Returns the builtin's state of type `S`, seeded with `S::default()` the
+    /// first time it's asked for. The state is kept in the shell, keyed by its
+    /// type alone, and cloned with the shell: a change made in a subshell
+    /// stays there, as a change to a variable does.
+    ///
+    /// The type is the state's identity, so give each state a type of its own
+    /// (a newtype, not a bare `usize`): a builtin registered under several
+    /// names keeps one state, and builtins that share a state type share the
+    /// state. Builtin state is kept out of a serialized shell (with the `serde`
+    /// feature), so a shell restored from one starts each state afresh.
+    pub fn state_mut<S: Clone + Default + Send + Sync + 'static>(&mut self) -> &mut S {
+        self.shell.builtin_states_mut().get_mut_or_default()
+    }
+
     /// Returns the standard input file; usable with `write!` et al.
     pub fn stdin(&self) -> impl std::io::Read + 'static {
         self.params.stdin(self.shell)
@@ -105,7 +137,32 @@ impl From<&String> for CommandArg {
     }
 }
 
+impl From<&str> for CommandArg {
+    fn from(value: &str) -> Self {
+        Self::String(value.to_owned())
+    }
+}
+
+impl From<CommandArg> for String {
+    /// Converts the argument to a string; an assignment renders as it was
+    /// written. Like [`ToString::to_string`], but takes ownership instead of
+    /// copying.
+    fn from(value: CommandArg) -> Self {
+        match value {
+            CommandArg::String(s) => s,
+            CommandArg::Assignment(a) => a.to_string(),
+        }
+    }
+}
+
 impl CommandArg {
+    const fn to_string_len_hint(&self) -> usize {
+        match self {
+            Self::String(s) => s.len(),
+            Self::Assignment(_) => 0,
+        }
+    }
+
     pub(crate) fn quote_for_tracing(&self) -> Cow<'_, str> {
         match self {
             Self::String(s) => escape::quote_if_needed(s, escape::QuoteMode::SingleQuote),
@@ -157,100 +214,95 @@ impl<SE: extensions::ShellExtensions> std::ops::DerefMut for ShellForCommand<'_,
     }
 }
 
-/// Composes a `std::process::Command` to execute the given command. Appropriately
-/// configures the command name and arguments, redirections, injected file
-/// descriptors, environment variables, etc.
+/// The environment to start an external program with.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProgramEnvironment {
+    /// No variables at all (as for `exec -c`).
+    Empty,
+    /// The shell's exported variables and functions, as they are (as for `exec`).
+    Exported,
+    /// The shell's exported variables and functions, with `_` set to the program's
+    /// path, as for a command the shell runs.
+    Command,
+}
+
+/// Composes the [`processes::LaunchRequest`] for the process that runs the given
+/// external command.
+///
+/// The process gets the shell's working directory and the context's open files,
+/// and runs in the shell's process group; callers may change that.
 ///
 /// # Arguments
 ///
 /// * `context` - The execution context in which the command is being composed.
-/// * `command_name` - The name of the command to execute.
+/// * `program` - The resolved path of the program to execute.
 /// * `argv0` - The value to use for `argv[0]` (may be different from the command).
 /// * `args` - The arguments to pass to the command.
-/// * `empty_env` - If true, the command will be executed with an empty environment; if false, the
-///   command will inherit environment variables marked as exported in the provided `Shell`.
-#[allow(unused_variables, reason = "argv0 is only used on unix platforms")]
-pub fn compose_std_command<S: AsRef<OsStr>, SE: extensions::ShellExtensions>(
+/// * `env` - The environment to start the program with.
+pub fn compose_launch_request<S: AsRef<str>, SE: extensions::ShellExtensions>(
     context: &ExecutionContext<'_, SE>,
-    command_name: &str,
+    program: &Path,
     argv0: &str,
     args: &[S],
-    empty_env: bool,
-) -> Result<std::process::Command, error::Error> {
-    let mut cmd = std::process::Command::new(command_name);
-
-    // Override argv[0].
-    // NOTE: Not supported on all platforms.
-    cmd.arg0(argv0);
-
-    // Pass through args.
-    cmd.args(args);
-
-    // Use the shell's current working dir.
-    cmd.current_dir(context.shell.working_dir());
-
-    // Start with a clear environment.
-    cmd.env_clear();
-
-    // Add in exported variables.
-    if !empty_env {
-        for (k, v) in context.shell.env().iter_exported() {
-            // NOTE: To match bash behavior, we only include exported variables
-            // that are set (i.e., have a value). This means a variable that
-            // shows up in `declare -p` but has no *set* value will be omitted.
-            if v.value().is_set() {
-                cmd.env(k.as_str(), v.value().to_cow_str(context.shell).as_ref());
+    env: ProgramEnvironment,
+) -> processes::LaunchRequest {
+    processes::LaunchRequest {
+        program: program.to_owned(),
+        argv0: argv0.to_owned(),
+        args: args.iter().map(|arg| arg.as_ref().to_owned()).collect(),
+        env: match env {
+            ProgramEnvironment::Empty => vec![],
+            ProgramEnvironment::Exported => compose_env(context.shell, None),
+            ProgramEnvironment::Command => {
+                compose_env(context.shell, Some(&program.to_string_lossy()))
             }
+        },
+        working_dir: context.shell.working_dir().to_owned(),
+        open_files: context.iter_fds().into(),
+        process_group: processes::ProcessGroup::Inherit,
+        kill_on_drop: context.shell.options().kill_external_commands_on_drop,
+    }
+}
+
+/// Composes the environment for an external command: the shell's exported
+/// variables and functions.
+///
+/// # Arguments
+///
+/// * `shell` - The shell whose exported state should be used.
+/// * `program` - The program's path, to set `_` to, if it's to be set.
+fn compose_env(
+    shell: &Shell<impl extensions::ShellExtensions>,
+    program: Option<&str>,
+) -> Vec<(String, String)> {
+    let mut env = vec![];
+
+    // Add in exported variables, but `_`, if it's to be set below.
+    for (k, v) in shell.env().iter_exported() {
+        // NOTE: To match bash behavior, we only include exported variables
+        // that are set and are not arrays. Arrays retain their export attribute
+        // in the shell but are not serialized into a child process's environment.
+        if (program.is_none() || k != "_")
+            && let variables::ShellValue::String(value) = v.resolve_value(shell)
+        {
+            env.push((k.clone(), value));
         }
-        // Set _ to the resolved command path for external commands.
-        cmd.env("_", command_name);
+    }
+
+    if let Some(program) = program {
+        env.push(("_".to_owned(), program.to_owned()));
     }
 
     // Add in exported functions.
-    if !empty_env {
-        for (func_name, registration) in context.shell.funcs().iter() {
-            if registration.is_exported() {
-                let var_name = std::format!("BASH_FUNC_{func_name}%%");
-                let value = std::format!("() {}", registration.definition().body);
-                cmd.env(var_name, value);
-            }
+    for (func_name, registration) in shell.funcs().iter() {
+        if registration.is_exported() {
+            let var_name = std::format!("BASH_FUNC_{func_name}%%");
+            let value = std::format!("() {}", registration.definition().body);
+            env.push((var_name, value));
         }
     }
 
-    // Redirect stdin, if applicable.
-    match context.try_fd(OpenFiles::STDIN_FD) {
-        Some(OpenFile::Stdin(_)) | None => (),
-        Some(stdin_file) => {
-            let as_stdio: Stdio = stdin_file.try_into()?;
-            cmd.stdin(as_stdio);
-        }
-    }
-
-    // Redirect stdout, if applicable.
-    match context.try_fd(OpenFiles::STDOUT_FD) {
-        Some(OpenFile::Stdout(_)) | None => (),
-        Some(stdout_file) => {
-            let as_stdio: Stdio = stdout_file.try_into()?;
-            cmd.stdout(as_stdio);
-        }
-    }
-
-    // Redirect stderr, if applicable.
-    match context.try_fd(OpenFiles::STDERR_FD) {
-        Some(OpenFile::Stderr(_)) | None => {}
-        Some(stderr_file) => {
-            let as_stdio: Stdio = stderr_file.try_into()?;
-            cmd.stderr(as_stdio);
-        }
-    }
-
-    // Inject any other fds.
-    let other_files = context.iter_fds().filter(|(fd, _)| {
-        *fd != OpenFiles::STDIN_FD && *fd != OpenFiles::STDOUT_FD && *fd != OpenFiles::STDERR_FD
-    });
-    cmd.inject_fds(other_files)?;
-
-    Ok(cmd)
+    env
 }
 
 pub(crate) async fn on_preexecute(
@@ -258,7 +310,7 @@ pub(crate) async fn on_preexecute(
 ) -> Result<(), error::Error> {
     // Set BASH_COMMAND before invoking the DEBUG trap (and generally before
     // executing commands).
-    let full_cmd = cmd.args.iter().map(|arg| arg.to_string()).join(" ");
+    let full_cmd = format_command_args(&cmd.args);
     cmd.shell.env_mut().update_or_add(
         "BASH_COMMAND",
         variables::ShellValueLiteral::Scalar(full_cmd),
@@ -276,6 +328,24 @@ pub(crate) async fn on_preexecute(
     }
 
     Ok(())
+}
+
+fn format_command_args(args: &[CommandArg]) -> String {
+    let capacity = args
+        .iter()
+        .map(CommandArg::to_string_len_hint)
+        .sum::<usize>()
+        + args.len().saturating_sub(1);
+    let mut result = String::with_capacity(capacity);
+
+    for (i, arg) in args.iter().enumerate() {
+        if i > 0 {
+            result.push(' ');
+        }
+        let _ = write!(result, "{arg}");
+    }
+
+    result
 }
 
 /// Represents a simple command to be executed.
@@ -307,12 +377,6 @@ pub struct SimpleCommand<'a, SE: extensions::ShellExtensions> {
     /// Optional override for the `argv[0]` value presented to an externally
     /// spawned process. When `None`, `command_name` is used.
     pub argv0: Option<String>,
-
-    /// Optionally provides a function that can run after execution occurs. Note
-    /// that it is *not* invoked if the shell is discarded during the execution
-    /// process.
-    #[allow(clippy::type_complexity)]
-    pub post_execute: Option<fn(&mut Shell<SE>) -> Result<(), error::Error>>,
 }
 
 impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
@@ -342,7 +406,6 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
             path_dirs: None,
             process_group_id: None,
             argv0: None,
-            post_execute: None,
         }
     }
 
@@ -364,7 +427,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         if self.shell.options().posix_mode
             && builtin
                 .as_ref()
-                .is_some_and(|r| !r.disabled && r.special_builtin)
+                .is_some_and(|r| r.is_enabled() && r.is_special())
         {
             #[allow(clippy::unwrap_used, reason = "we just checked that builtin is Some")]
             let builtin = builtin.unwrap();
@@ -384,39 +447,30 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         // If we haven't yet resolved the command name and found a builtin that's not disabled,
         // then invoke it.
         if let Some(builtin) = builtin {
-            if !builtin.disabled {
+            if builtin.is_enabled() {
                 return self.execute_via_builtin(builtin).await;
             }
         }
 
         // We still haven't found a command to invoke. We'll need to look for an external command.
-        if !sys::fs::contains_path_separator(&self.command_name) {
-            // All else failed; if we were given path directories to search, look through them
-            // for a match. Otherwise, use our default search logic.
-            let path = if let Some(path_dirs) = &self.path_dirs {
+        // If we were given path directories to search, look through them for a match.
+        // Otherwise, use our default search logic.
+        let path = match &self.path_dirs {
+            Some(path_dirs) if !sys::fs::contains_path_separator(&self.command_name) => {
                 pathsearch::resolve_command(path_dirs, self.command_name.as_str())
-            } else {
-                self.shell
-                    .resolve_command_in_path_using_cache(&self.command_name)
-            };
-
-            if let Some(path) = path {
-                self.execute_via_external(&path)
-            } else {
-                // Bash updates $_ even when the command is not found, so mirror
-                // that here before reporting the error.
-                let last_arg = Self::take_last_arg(&self.args);
-                self.shell.update_last_arg_variable(last_arg);
-
-                if let Some(post_execute) = self.post_execute {
-                    let _ = post_execute(&mut self.shell);
-                }
-
-                Err(ErrorKind::CommandNotFound(self.command_name).into())
             }
+            _ => self.shell.resolve_external_command(&self.command_name),
+        };
+
+        if let Some(path) = path {
+            self.execute_via_external(&path)
         } else {
-            let command_name = PathBuf::from(self.command_name.clone());
-            self.execute_via_external(command_name.as_path())
+            // Bash updates $_ even when the command is not found, so mirror
+            // that here before reporting the error.
+            let last_arg = Self::take_last_arg(&self.args);
+            self.shell.update_last_arg_variable(last_arg);
+
+            Err(ErrorKind::CommandNotFound(self.command_name).into())
         }
     }
 
@@ -438,7 +492,8 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
                     builtin,
                     self.command_name,
                     self.args,
-                ))
+                )
+                .await)
             }
             ShellForCommand::ParentShell(..) => {
                 self.execute_via_builtin_in_parent_shell(builtin).await
@@ -446,31 +501,36 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         }
     }
 
+    // Not an `async fn`: its future would hold `shell`, and that would grow the
+    // future of every simple command, not just this rare case.
     fn execute_via_builtin_in_owned_shell(
         mut shell: Shell<SE>,
         params: ExecutionParameters,
         builtin: builtins::Registration<SE>,
         command_name: String,
         args: Vec<CommandArg>,
-    ) -> ExecutionSpawnResult {
+    ) -> impl Future<Output = ExecutionSpawnResult> + use<SE> {
         let last_arg = Self::take_last_arg(&args);
-        let join_handle = tokio::task::spawn_blocking(move || {
-            let cmd_context = ExecutionContext {
-                shell: &mut shell,
-                command_name,
-                params,
-            };
+        // Builtins may block (e.g., reading input), so keep them from holding up the
+        // rest of the pipeline.
+        let spawner = shell.task_spawner().clone();
+        let task = spawner.spawn_blocking(async move {
+            // The stage runs in a shell of its own, as a subshell does, so an
+            // error ends the stage alone: it's reported on the stage's
+            // standard error and becomes the stage's status.
+            let stderr = params.try_stderr(&shell);
+            let cmd_context = ExecutionContext::new(&mut shell, command_name, params);
 
-            let rt = tokio::runtime::Handle::current();
-            let result = rt.block_on(execute_builtin_command(&builtin, cmd_context, args));
+            let result = execute_builtin_command(&builtin, cmd_context, args).await;
+            let result = shell.end_subshell(result, || stderr);
 
             // Update $_ after command execution.
             shell.update_last_arg_variable(last_arg);
 
-            result
+            Ok(result)
         });
 
-        ExecutionSpawnResult::StartedTask(join_handle)
+        async move { ExecutionSpawnResult::StartedTask(task.await) }
     }
 
     async fn execute_via_builtin_in_parent_shell(
@@ -480,20 +540,12 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         let mut shell = self.shell;
         let last_arg = Self::take_last_arg(&self.args);
 
-        let cmd_context = ExecutionContext {
-            shell: &mut shell,
-            command_name: self.command_name,
-            params: self.params,
-        };
+        let cmd_context = ExecutionContext::new(&mut shell, self.command_name, self.params);
 
         let result = execute_builtin_command(&builtin, cmd_context, self.args).await;
 
         // Update $_ after command execution.
         shell.update_last_arg_variable(last_arg);
-
-        if let Some(post_execute) = self.post_execute {
-            let _ = post_execute(&mut shell);
-        }
 
         let result = result?;
 
@@ -504,14 +556,88 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         self,
         func_registration: functions::Registration,
     ) -> Result<ExecutionSpawnResult, error::Error> {
+        match self.shell {
+            ShellForCommand::OwnedShell { target, .. } => {
+                Ok(Self::execute_via_function_in_owned_shell(
+                    *target,
+                    self.params,
+                    func_registration,
+                    self.command_name,
+                    self.args,
+                )
+                .await)
+            }
+            ShellForCommand::ParentShell(..) => {
+                self.execute_via_function_in_parent_shell(func_registration)
+                    .await
+            }
+        }
+    }
+
+    // As a non-last pipeline stage, a function must run as a background task
+    // (mirroring `execute_via_builtin_in_owned_shell` above) rather than
+    // being awaited inline in `spawn_pipeline_processes`'s own per-stage
+    // loop: awaiting it inline there blocks that loop until the function's
+    // body fully returns, so the *next* pipeline stage (the one that would
+    // actually drain this function's stdout pipe) is never even spawned
+    // until this one is done. A function that writes more to its stdout
+    // pipe than the OS pipe buffer holds (~64KiB on Linux) before returning
+    // then blocks on that `write()` forever, since nothing is reading the
+    // other end yet -- a plain deadlock, not a slow completion. Confirmed
+    // empirically with a two-line repro having nothing to do with any
+    // external command or builtin: `f() { for i in $(seq 1 5000); do echo
+    // line $i; done; }; f | cat` hangs indefinitely. Real bash always runs
+    // every pipeline stage as its own concurrently-running process, so this
+    // case never arises there.
+    fn execute_via_function_in_owned_shell(
+        mut shell: Shell<SE>,
+        params: ExecutionParameters,
+        func_registration: functions::Registration,
+        command_name: String,
+        args: Vec<CommandArg>,
+    ) -> impl Future<Output = ExecutionSpawnResult> + use<SE> {
+        let last_arg = Self::take_last_arg(&args);
+        let spawner = shell.task_spawner().clone();
+        let task = spawner.spawn_blocking(async move {
+            // The stage runs in a shell of its own, as a subshell does, so an
+            // error ends the stage alone.
+            let stderr = params.try_stderr(&shell);
+            let cmd_context = ExecutionContext::new(&mut shell, command_name, params);
+
+            let spawn_result =
+                invoke_shell_function(func_registration, cmd_context, &args[1..]).await;
+
+            // Update $_ after command execution.
+            shell.update_last_arg_variable(last_arg);
+
+            let result = match spawn_result {
+                Ok(ExecutionSpawnResult::Completed(result)) => Ok(result),
+                Err(error) => Err(error),
+                Ok(
+                    ExecutionSpawnResult::StartedProcess(_) | ExecutionSpawnResult::StartedTask(_),
+                ) => {
+                    // invoke_shell_function() only ever returns Completed
+                    // today; this guards against a silent behavior change
+                    // rather than dropping already-started work.
+                    return error::unimp(
+                        "invoke_shell_function returned an unexpected spawn result",
+                    );
+                }
+            };
+            Ok(shell.end_subshell(result, || stderr))
+        });
+
+        async move { ExecutionSpawnResult::StartedTask(task.await) }
+    }
+
+    async fn execute_via_function_in_parent_shell(
+        self,
+        func_registration: functions::Registration,
+    ) -> Result<ExecutionSpawnResult, error::Error> {
         let mut shell = self.shell;
         let last_arg = Self::take_last_arg(&self.args);
 
-        let cmd_context = ExecutionContext {
-            shell: &mut shell,
-            command_name: self.command_name,
-            params: self.params,
-        };
+        let cmd_context = ExecutionContext::new(&mut shell, self.command_name, self.params);
 
         // Strip the function name off args.
         let result = invoke_shell_function(func_registration, cmd_context, &self.args[1..]).await;
@@ -522,10 +648,6 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         // where the caller observes only the invocation's last argument.
         shell.update_last_arg_variable(last_arg);
 
-        if let Some(post_execute) = self.post_execute {
-            let _ = post_execute(&mut shell);
-        }
-
         result
     }
 
@@ -533,16 +655,11 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         let mut shell = self.shell;
         let last_arg = Self::take_last_arg(&self.args);
 
-        let cmd_context = ExecutionContext {
-            shell: &mut shell,
-            command_name: self.command_name,
-            params: self.params,
-        };
+        let cmd_context = ExecutionContext::new(&mut shell, self.command_name, self.params);
 
-        let resolved_path = path.to_string_lossy();
         let result = execute_external_command(
             cmd_context,
-            resolved_path.as_ref(),
+            path,
             self.process_group_id,
             self.argv0.as_deref(),
             &self.args[1..],
@@ -551,10 +668,6 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         // Update $_ after command execution.
         shell.update_last_arg_variable(last_arg);
 
-        if let Some(post_execute) = self.post_execute {
-            let _ = post_execute(&mut shell);
-        }
-
         result
     }
 }
@@ -562,7 +675,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
 #[allow(clippy::too_many_lines)]
 pub(crate) fn execute_external_command(
     context: ExecutionContext<'_, impl extensions::ShellExtensions>,
-    executable_path: &str,
+    executable_path: &Path,
     process_group_id: Option<i32>,
     argv0_override: Option<&str>,
     args: &[CommandArg],
@@ -623,88 +736,67 @@ pub(crate) fn execute_external_command(
         ProcessGroupPolicy::NewProcessGroup
     );
 
-    // Compose the std::process::Command that encapsulates what we want to launch.
     // argv[0] defaults to context.command_name (the user-facing name of the
     // command) unless the caller specified an explicit override.
     let argv0 = argv0_override.unwrap_or(context.command_name.as_str());
-    #[allow(unused_mut, reason = "only mutated on unix platforms")]
-    let mut cmd = compose_std_command(
+
+    let mut request = compose_launch_request(
         &context,
         executable_path,
         argv0,
         cmd_args.as_slice(),
-        false, /* empty environment? */
-    )?;
+        ProgramEnvironment::Command,
+    );
 
     // Set up process group state.
-    if new_pg {
-        // Check if we'll be doing terminal control setup (which includes setsid)
+    request.process_group = if new_pg {
         if child_stdin_is_terminal && context.shell.options().external_cmd_leads_session {
-            // Don't set process_group(0) - setsid() in pre_exec will handle it
-            cmd.lead_session();
+            processes::ProcessGroup::NewSession
         } else {
-            // Normal case: create new process group in current session
-            cmd.process_group(0);
-            if child_stdin_is_terminal {
-                cmd.take_foreground();
+            processes::ProcessGroup::New {
+                take_foreground: child_stdin_is_terminal,
             }
         }
-    } else {
+    } else if let Some(pgid) = process_group_id {
         // We need to join an established process group.
-        if let Some(pgid) = process_group_id {
-            cmd.process_group(pgid);
-        }
-    }
+        processes::ProcessGroup::Join(pgid)
+    } else {
+        processes::ProcessGroup::Inherit
+    };
 
     // When tracing is enabled, report.
     tracing::debug!(
         target: trace_categories::COMMANDS,
         "Spawning: cmd='{} {}'",
-        cmd.get_program().to_string_lossy().to_string(),
-        cmd.get_args()
-            .map(|a| a.to_string_lossy().to_string())
-            .join(" ")
+        executable_path.display(),
+        request.args.join(" ")
     );
 
-    match sys::process::spawn(cmd, context.shell.options().kill_external_commands_on_drop) {
-        Ok(child) => {
-            // Retrieve the pid.
-            #[expect(clippy::cast_possible_wrap)]
-            let pid = child.id().map(|id| id as i32);
-            let mut actual_pgid = process_group_id;
-            if let Some(pid) = &pid {
-                if new_pg {
-                    actual_pgid = Some(*pid);
-                }
-            } else {
-                tracing::warn!("could not retrieve pid for child process");
-            }
-
-            Ok(ExecutionSpawnResult::StartedProcess(
-                processes::ChildProcess::new(child, pid, actual_pgid),
-            ))
-        }
+    match context.shell.process_launcher().spawn(request) {
+        Ok(child) => Ok(ExecutionSpawnResult::StartedProcess(child)),
         Err(spawn_err) => {
             if context.shell.options().interactive {
                 sys::terminal::move_self_to_foreground()?;
             }
 
-            if spawn_err.kind() == std::io::ErrorKind::NotFound {
-                if !context.shell.working_dir().exists() {
-                    Err(
-                        error::ErrorKind::WorkingDirMissing(context.shell.working_dir().to_owned())
-                            .into(),
-                    )
-                } else {
-                    Err(error::ErrorKind::CommandNotFound(context.command_name).into())
-                }
-            } else {
-                Err(
-                    error::ErrorKind::FailedToExecuteCommand(context.command_name, spawn_err)
-                        .into(),
-                )
-            }
+            Err(spawn_error(context, spawn_err))
         }
+    }
+}
+
+/// Translates an error from starting an external command into a shell error.
+fn spawn_error(
+    context: ExecutionContext<'_, impl extensions::ShellExtensions>,
+    spawn_err: std::io::Error,
+) -> error::Error {
+    if spawn_err.kind() == std::io::ErrorKind::NotFound {
+        if !context.shell.working_dir().exists() {
+            error::ErrorKind::WorkingDirMissing(context.shell.working_dir().to_owned()).into()
+        } else {
+            error::ErrorKind::CommandNotFound(context.command_name).into()
+        }
+    } else {
+        error::ErrorKind::FailedToExecuteCommand(context.command_name, spawn_err).into()
     }
 }
 
@@ -714,9 +806,9 @@ async fn execute_builtin_command<SE: extensions::ShellExtensions>(
     args: Vec<CommandArg>,
 ) -> Result<ExecutionResult, error::Error> {
     // In POSIX mode, special builtins that return errors are to be treated as fatal.
-    let mark_errors_fatal = builtin.special_builtin && context.shell.options().posix_mode;
+    let mark_errors_fatal = builtin.is_special() && context.shell.options().posix_mode;
 
-    match (builtin.execute_func)(context, args).await {
+    match builtin.execute(context, args).await {
         Ok(result) => Ok(result),
         Err(e) => {
             // Broken pipe errors should silently return the appropriate exit code
@@ -747,23 +839,20 @@ pub(crate) async fn invoke_shell_function(
 
     let positional_args = args.iter().map(|a| a.to_string());
 
-    // Note that we're going deeper. Once we do this, we need to make sure we don't bail early
-    // before "exiting" the function.
-    context.shell.enter_function(
-        context.command_name.as_str(),
-        &function,
-        positional_args,
-        &context.params,
-    )?;
+    // Enter the function; it's left however its body ends, even if it's cancelled.
+    let mut shell =
+        context
+            .shell
+            .enter_function(context.command_name.as_str(), &function, positional_args)?;
 
     // A function executes within the current shell process and shares its caller's open files,
     // so the parameters are passed through by shared reference rather than cloned. This prevents
     // direct mutation of the caller's `ExecutionParameters` open-file table, though the function
     // may still change the shell's persistent open files via builtins (e.g. `exec`).
-    let result = body.execute(context.shell, &context.params).await;
+    let result = body.execute(&mut shell, &context.params).await;
 
-    // We've come back out, reflect it.
-    context.shell.leave_function()?;
+    // Leave the function: pop its frame and its local variables.
+    drop(shell);
 
     // Get the actual execution result from the body of the function.
     let mut result = result?;
@@ -802,12 +891,18 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
     params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
 
     // Set up pipe so we can read the output.
-    let (reader, writer) = std::io::pipe()?;
+    let (reader, writer) = sys::pipes::pipe()?;
     params.set_fd(OpenFiles::STDOUT_FD, writer.into());
 
     let mut async_reader = sys::async_pipe::AsyncPipeReader::new(reader)?;
 
-    let cmd_join_handle = tokio::spawn(run_substitution_command(subshell, params, s));
+    // The command may block writing to the pipe (e.g., a builtin writing more than the
+    // pipe's buffer holds), so don't run it on a thread that drives the runtime's I/O:
+    // that thread must stay free to deliver readiness to the reader below.
+    let cmd_join_handle = shell
+        .task_spawner()
+        .spawn_blocking(run_substitution_command(subshell, params, s))
+        .await;
 
     let output_str = async_reader.read_to_string().await?;
 
@@ -902,5 +997,48 @@ fn try_unwrap_bare_input_redir_program(program: &ast::Program) -> Option<&ast::I
             ast::IoFileRedirectTarget::Filename(..),
         ) if fd.is_none_or(|fd| fd == openfiles::OpenFiles::STDIN_FD) => Some(redir),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assignment(name: ast::AssignmentName, value: &str, append: bool) -> CommandArg {
+        CommandArg::Assignment(ast::Assignment {
+            name,
+            value: ast::AssignmentValue::Scalar(ast::Word::new(value)),
+            append,
+            loc: crate::SourceSpan::default(),
+        })
+    }
+
+    #[test]
+    fn a_word_converts_to_itself() {
+        assert_eq!(String::from(CommandArg::from("a b")), "a b");
+        assert_eq!(String::from(CommandArg::from(&String::from("x"))), "x");
+        assert_eq!(String::from(CommandArg::from(String::new())), "");
+    }
+
+    #[test]
+    fn an_assignment_converts_to_its_text() {
+        let name = || ast::AssignmentName::VariableName("x".to_owned());
+        assert_eq!(String::from(assignment(name(), "1 2", false)), "x=1 2");
+        assert_eq!(String::from(assignment(name(), "1", true)), "x+=1");
+        assert_eq!(String::from(assignment(name(), "", false)), "x=");
+
+        let element = ast::AssignmentName::ArrayElementName("a".to_owned(), "1".to_owned());
+        assert_eq!(String::from(assignment(element, "v", false)), "a[1]=v");
+    }
+
+    #[test]
+    fn conversion_matches_display() {
+        let args = [
+            CommandArg::from("w"),
+            assignment(ast::AssignmentName::VariableName("x".to_owned()), "1", true),
+        ];
+        for arg in args {
+            assert_eq!(arg.to_string(), String::from(arg));
+        }
     }
 }

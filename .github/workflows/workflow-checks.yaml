@@ -12,6 +12,15 @@ on:
 
 permissions: {}
 
+# N.B. This is the *online* zizmor pass: it runs the audits that need network
+# access and uploads SARIF to code scanning for stateful triage in the Security
+# tab, and it deliberately does not fail the build.
+#
+# The complementary offline pass -- which does fail, and fails fast -- is the
+# `zizmor` hook in .pre-commit-config.yaml, run in CI by hooks.yaml and locally
+# by `cargo xtask check hooks workflows`. The two are not redundant; do not
+# collapse them without checking which audits each one actually runs.
+
 # Only allow one run of the workflow per branch / PR at a time.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -20,7 +29,7 @@ concurrency:
 jobs:
   zizmor:
     name: zizmor latest via zizmor-action
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       security-events: write # needed for SARIF uploads
     steps:
@@ -33,4 +42,4 @@ jobs:
       # analysis and incremental triage in the Security tab. Does not fail
       # with non-zero result but reports them.
       - name: Run zizmor 🌈
-        uses: zizmorcore/zizmor-action@3dc1ecc9bcb9e94e9b2c709687979e1298497054 # v0.6.2
+        uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1

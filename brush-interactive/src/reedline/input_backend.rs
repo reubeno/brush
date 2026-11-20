@@ -77,6 +77,10 @@ impl ReedlineInputBackend {
                 .with_name(COMPLETION_MENU_NAME)
                 .with_marker("")
                 .with_columns(10)
+                // Like readline, hand completion the whole line, not just the text before
+                // the cursor: completion functions see the words after the cursor (e.g. in
+                // COMP_WORDS), and candidates completed mid-line don't get a trailing space.
+                .with_input_mode(reedline::InputMode::FullBuffer)
                 .with_text_style(completion_menu_text_style())
                 .with_match_text_style(completion_menu_match_text_style())
                 .with_selected_text_style(completion_menu_selected_text_style())
@@ -149,23 +153,26 @@ impl InputBackend for ReedlineInputBackend {
     /// # Arguments
     ///
     /// * `prompt` - The prompt to display to the user.
-    fn read_line(
+    #[allow(
+        clippy::unused_async_trait_impl,
+        reason = "this backend reads synchronously; the trait is async for those that don't"
+    )]
+    async fn read_line(
         &mut self,
         _shell: &crate::ShellRef<impl brush_core::ShellExtensions>,
         prompt: InteractivePrompt,
     ) -> Result<ReadResult, ShellError> {
-        if let Some(reedline) = &mut self.reedline {
-            match reedline.read_line(&prompt) {
-                Ok(reedline::Signal::Success(s)) => Ok(ReadResult::Input(s)),
-                Ok(reedline::Signal::CtrlC) => Ok(ReadResult::Interrupted),
-                Ok(reedline::Signal::CtrlD) => Ok(ReadResult::Eof),
-                Ok(reedline::Signal::ExternalBreak(_)) => Err(ShellError::UnexpectedInputFailure),
-                Ok(reedline::Signal::HostCommand(cmd)) => Ok(ReadResult::BoundCommand(cmd)),
-                Ok(_) => Err(ShellError::UnexpectedInputFailure),
-                Err(err) => Err(ShellError::InputError(err)),
-            }
-        } else {
-            Ok(ReadResult::Eof)
+        let Some(reedline) = &mut self.reedline else {
+            return Ok(ReadResult::Eof);
+        };
+
+        match reedline.read_line(&prompt) {
+            Ok(reedline::Signal::Success(s)) => Ok(ReadResult::Input(s)),
+            Ok(reedline::Signal::CtrlC(_)) => Ok(ReadResult::Interrupted),
+            Ok(reedline::Signal::CtrlD) => Ok(ReadResult::Eof),
+            Ok(reedline::Signal::HostCommand(cmd)) => Ok(ReadResult::BoundCommand(cmd)),
+            Ok(_) => Err(ShellError::UnexpectedInputFailure),
+            Err(err) => Err(ShellError::InputError(err)),
         }
     }
 

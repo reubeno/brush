@@ -120,3 +120,263 @@ cases:
 
       # Remove set-output.txt to avoid it being byte-for-byte compared.
       rm set-output.txt
+
+  - name: "set quotes values starting with # or ~"
+    stdin: |
+      x="~" y="#z" z="a=~" w="a~"
+      set | grep -E "^(w|x|y|z)="
+
+  - name: "set leaves commas unquoted, like bash"
+    stdin: |
+      x="a,b" y="{a,b}" z=","
+      set | grep -E "^(x|y|z)="
+
+  - name: "set and declare -p leave commas in associative array keys unquoted, like bash"
+    stdin: |
+      declare -A m=([a,b]=1 [c]=2)
+      set | grep "^m="
+      declare -p m
+
+  - name: "set applies -o and +o in the order given"
+    stdin: |
+      set -o noglob +o noglob; echo "1 $-"
+      set +o noglob -o noglob; echo "2 $-"; set +f
+      set -o noglob -o noclobber +o noglob; echo "3 $-"; set +fC
+
+  - name: "set applies letters and -o names in the order given"
+    stdin: |
+      set -f +o noglob; echo "1 $-"
+      set -o noglob +f; echo "2 $-"; set +f
+      set +o noglob -f; echo "3 $-"; set +f
+      set -eo pipefail +e; echo "4 $-"; shopt -po pipefail; set +o pipefail
+
+  - name: "set -o alone after a name lists the options it just set"
+    stdin: |
+      set -o noglob -o | grep noglob
+      set +o noglob +o | grep noglob
+
+  - name: "set stops at an unknown option name"
+    ignore_stderr: true
+    stdin: |
+      set -- q
+      set -o nosuch -f a b; echo "$? $- [$*]"
+
+  - name: "set - turns off -x and -v"
+    ignore_stderr: true
+    stdin: |
+      set -x -v; set -; echo "1 $-"
+      set -x; set -e -; echo "2 $-"; set +e
+      set -x -v; set -- a; set +xv; echo "3 $- [$*]"
+
+  - name: "set -o with an unknown option name"
+    stdin: |
+      strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
+      set -o bogus 2>&1 | strip
+      echo "set -o: ${PIPESTATUS[0]}"
+      set +o bogus 2>&1 | strip
+      echo "set +o: ${PIPESTATUS[0]}"
+
+  - name: "set takes the letters after -o as more options"
+    stdin: |
+      set -oe | tail -1
+      set -oe >/dev/null; echo "$-"
+      set +oe | tail -1
+      set +oe >/dev/null; echo "$-"
+
+  - name: "set rejects an option it doesn't have"
+    ignore_stderr: true
+    stdin: |
+      set -Z; echo "set -Z: $?"
+      set +Z; echo "set +Z: $?"
+
+  - name: "set accepts -r and +r"
+    stdin: |
+      set +r; echo "+r: $?"
+      set -r; echo "-r: $?"
+
+  - name: "set -r turns on restricted mode"
+    known_failure: true # TODO(set): brush accepts -r but doesn't restrict the shell or show r in $-
+    stdin: |
+      set -r; echo "status: $?"
+      [[ $- == *r* ]] && echo "restricted"
+      cd / 2>/dev/null; echo "cd: $?"
+
+  - name: "set skips a lone +"
+    known_failure: true # TODO(set): a lone + is taken as the first operand; needs winnow-args to skip it among the options
+    stdin: |
+      opts() { local o r=; for o in a e f u x B C; do case $- in *"$o"*) r+=$o ;; esac; done; echo "[$r]"; }
+      set a b; set +; echo "$# $*"
+      set + | wc -l
+      set + x y; echo "$# $*"
+      set + -e; opts; echo "$# $*"; set +e
+      set -e + z; opts; echo "$# $*"; set +e
+      set + + -u; opts; set +u
+      set + -- w; echo "$# $*"
+      set -- +; echo "$# $*"
+      set - +; echo "$# $*"
+      set v + -e; opts; echo "$# $*"
+
+  - name: "set rejects an unknown letter after a lone + with status 1"
+    known_failure: true # TODO(set): brush fails with status 2
+    ignore_stderr: true
+    stdin: |
+      set + -Z; echo "status: $?"
+
+  - name: "set applies the options before a lone + when a later one is unknown"
+    known_failure: true # TODO(set): a lone + is taken as the first operand
+    ignore_stderr: true
+    stdin: |
+      opts() { local o r=; for o in a e f u x B C; do case $- in *"$o"*) r+=$o ;; esac; done; echo "[$r]"; }
+      set -f + -Z; echo "status: $?"; opts; set +f
+      set -f -u + -Z; echo "status: $?"; opts; set +fu
+      set a b; set -f + -Z c; echo "status: $?"; opts; echo "$# $*"; set +f
+      # Without a lone +, an unknown letter stops set before any option applies.
+      set -f -Z; echo "status: $?"; opts
+
+  - name: "set applies the options after a lone + up to an unknown one"
+    known_failure: true # TODO(set): a lone + is taken as the first operand
+    ignore_stderr: true
+    stdin: |
+      opts() { local o r=; for o in a e f u x B C; do case $- in *"$o"*) r+=$o ;; esac; done; echo "[$r]"; }
+      set + -u -Z; echo "status: $?"; opts; set +u
+      set + -uZ; echo "status: $?"; opts; set +u
+      set + -Zu; echo "status: $?"; opts
+
+  - name: "set -o and +o list the options as they stand at that point"
+    stdin: |
+      set -eo | grep '^errexit'
+      set -oe | grep '^errexit'
+      set -o errexit -o | grep '^errexit'
+      set -o -o errexit | grep '^errexit'
+      set +o -e | grep ' errexit$'
+      set -e +o | grep ' errexit$'
+      set -u -o -u | grep '^nounset'
+      set -o '' | grep '^errexit'
+      set +o '' | grep ' errexit$'
+      set +o -o | grep -E '^(set [-+]o errexit|errexit)'
+
+  - name: "set -o takes an empty word as its first operand"
+    known_failure: true # TODO(set): brush takes the empty word as -o's name and applies the options after it
+    stdin: |
+      set a; set -o '' -e >/dev/null; echo "$- $# [$*]"
+      set -o '' x >/dev/null; echo "$# [$*]"
+
+  - name: "set applies -x and +x in command-line order"
+    stdin: |
+      opts() { local o r=; for o in a e f u x B C; do case $- in *"$o"*) r+=$o ;; esac; done; echo "[$r]"; }
+      set -e +e; opts
+      set +e -e; opts; set +e
+      set -u +eu -e; opts; set +e
+      set -eux +eux; opts
+      set -e -e +e +e -e; opts; set +e
+      set -B +B; opts; set +B -B; opts
+      set -C +C -C; opts; set +C
+      : > zzglob; set -f +f; echo zzg*; set +f -f; echo zzg*; set +f
+      set -e +u; opts; set +e
+
+  - name: "set applies -o and +o in order with the letter options"
+    stdin: |
+      opts() { local o r=; for o in a e f u x B C; do case $- in *"$o"*) r+=$o ;; esac; done; echo "[$r]"; }
+      set -o errexit +e; opts
+      set +e -o errexit; opts; set +e
+      # shopt -po fails for an option that is off; || keeps errexit from ending the case.
+      set -eo pipefail +o pipefail; opts; shopt -po pipefail || :; set +e
+      set +o pipefail -o pipefail +o pipefail; shopt -po pipefail
+      set -o pipefail +o pipefail -o pipefail; shopt -po pipefail; set +o pipefail
+      set -o nounset -o errexit +o nounset; opts; set +e
+      set +o errexit +o nounset -eu; opts; set +eu
+      set -a -o allexport +a; opts
+      set -uo nounset +u; opts
+      set -x +o xtrace; opts
+
+  - name: "set -o or +o with no name, then more options or operands"
+    stdin: |
+      opts() { local o r=; for o in a e f u x B C; do case $- in *"$o"*) r+=$o ;; esac; done; echo "[$r]"; }
+      set -o -e >/dev/null; opts; set +e
+      set +o -u >/dev/null; opts; set +u
+      set -oe >/dev/null; opts; set +e
+      set -o -- a b >/dev/null; echo "$# $*"
+      set -o >/dev/null -- c; echo "$# $*"
+
+  - name: "set stops at an unknown option name among other options and operands"
+    stdin: |
+      opts() { local o r=; for o in a e f u x B C; do case $- in *"$o"*) r+=$o ;; esac; done; echo "[$r]"; }
+      set -o nosuch -u 2>/dev/null; echo "status: $?"; opts
+      set -u -o nosuch 2>/dev/null; echo "status: $?"; opts; set +u
+      # set fails here with errexit on; || keeps it from ending the case.
+      set -o errexit +o nosuch -o nounset 2>/dev/null || echo "status: $?"; opts; set +e
+      set a b; set -o nosuch c d 2>/dev/null; echo "$# $*"
+      set -o nosuch -- e f 2>/dev/null; echo "$# $*"
+      set -o nosuch -o 2>/dev/null; echo "listed nothing"
+
+  - name: "set rejects an unknown letter before applying any option"
+    ignore_stderr: true
+    stdin: |
+      opts() { local o r=; for o in a e f u x B C; do case $- in *"$o"*) r+=$o ;; esac; done; echo "[$r]"; }
+      set -e -Z; echo "status: $?"; opts
+      set -eZ; echo "status: $?"; opts
+      set -Ze -u; echo "status: $?"; opts
+      set -o errexit -Z; echo "status: $?"; opts
+      set -o -Z | head -1; opts
+      set -ex+u; echo "status: $?"; opts
+      set a b; set -Z c; echo "$# $*"
+
+  - name: "set - turns off -x and -v and ends the options"
+    stdin: |
+      opts() { local o r=; for o in v x; do case $- in *"$o"*) r+=$o ;; esac; done; echo "[$r]"; }
+      { set -x; set -; } 2>/dev/null; opts
+      { set -xv; set - a; } 2>/dev/null; opts; echo "$# $*"
+      { set -x -e - b; } 2>/dev/null; opts; echo "$# $*"; set +e
+      { set -x - -e; } 2>/dev/null; opts; echo "$# $*"
+      { set -x - -; } 2>/dev/null; opts; echo "$# $*"
+
+  - name: "set takes options only before its operands"
+    stdin: |
+      opts() { local o r=; for o in a e f u x B C; do case $- in *"$o"*) r+=$o ;; esac; done; echo "[$r]"; }
+      set -- -x; opts; echo "$# $*"
+      set x -e; opts; echo "$# $*"
+      set -e a -u; opts; echo "$# $*"; set +e
+      set -e -- -a; opts; echo "$# $*"; set +e
+      set -o errexit x -o nounset; opts; echo "$# $*"; set +e
+      set +o errexit nosuch; echo "status: $?"; echo "$# $*"
+      set - -Z; echo "$# $*"
+      set -- -- a; echo "$# $*"
+      set - -- a; echo "$# $*"
+      set -- - a; echo "$# $*"
+      set x -- y; echo "$# $*"
+      set x - y; echo "$# $*"
+      set ''; echo "$#"
+      set -e ''; opts; echo "$#"; set +e
+
+  - name: "set leaves the positional parameters alone without operands"
+    stdin: |
+      set a b c
+      set -e; echo "$#"; set +e
+      set -o errexit; echo "$#"; set +e
+      set -o >/dev/null; echo "$#"
+      set +o >/dev/null; echo "$#"
+      set -; echo "$#"
+      set -e -; echo "$#"; set +e
+      set --; echo "$#"
+
+  - name: "set -o in the middle of a bundle takes the next word"
+    known_failure: true # TODO(set): brush lists the options and takes the next word as an operand
+    stdin: |
+      opts() { local o r=; for o in a e f u x B C; do case $- in *"$o"*) r+=$o ;; esac; done; echo "[$r]"; }
+      set -ou nounset; echo "status: $?"; opts; echo "$#"; set +u
+      set -oe nounset; echo "status: $?"; opts; echo "$#"; set +eu
+
+  - name: "set -o takes no name that starts with + or is a lone - or +"
+    known_failure: true # TODO(set): brush takes the word as the option name and fails
+    stdin: |
+      opts() { local o r=; for o in a e f u x B C; do case $- in *"$o"*) r+=$o ;; esac; done; echo "[$r]"; }
+      set -e; set -o +e >/dev/null; echo "status: $?"; opts
+      set -o - >/dev/null; echo "status: $?"
+      set -o + a >/dev/null; echo "status: $?"; echo "$# $*"
+      set +o +o errexit >/dev/null; echo "status: $?"; opts; set +e
+
+  - name: "set -o vi and -o emacs turn each other off"
+    known_failure: true # TODO(set): brush leaves both on
+    stdin: |
+      set -o vi -o emacs; set -o | grep -E '^(vi|emacs) '
+      set -o emacs -o vi; set -o | grep -E '^(vi|emacs) '

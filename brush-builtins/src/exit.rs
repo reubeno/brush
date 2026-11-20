@@ -1,20 +1,21 @@
-use clap::Parser;
-
 use brush_core::{ExecutionControlFlow, ExecutionResult, builtins};
 
 /// Exit the shell.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct ExitCommand {
     /// The exit code to return.
-    #[arg(allow_hyphen_values = true)]
+    #[arg(positional, allow_negative_numbers)]
     code: Option<i64>,
 }
 
-impl builtins::Command for ExitCommand {
+brush_winnow_args_adapter::impl_parse_args!(ExitCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ExitCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         #[expect(clippy::cast_sign_loss)]

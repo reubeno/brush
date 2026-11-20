@@ -12,7 +12,7 @@ pub trait InputBackend: Send {
         &mut self,
         shell: &crate::ShellRef<impl brush_core::ShellExtensions>,
         prompt: InteractivePrompt,
-    ) -> Result<ReadResult, ShellError>;
+    ) -> impl Future<Output = Result<ReadResult, ShellError>>;
 
     /// Returns the current contents of the read buffer and the current cursor
     /// position within the buffer; None is returned if the read buffer is
@@ -41,6 +41,7 @@ pub enum ReadResult {
 }
 
 /// Represents an interactive prompt.
+#[derive(Default)]
 pub struct InteractivePrompt {
     /// Prompt to display.
     pub prompt: String,

@@ -21,25 +21,44 @@ fn cacheable_parse(input: &str) -> Result<ast::ArithmeticExpr, error::WordParseE
 
 peg::parser! {
     grammar arithmetic() for str {
+        // An expression holding nothing but whitespace evaluates to 0, wherever it came from:
+        // `$(( ))`, `let ''`, or a blank array subscript.
         pub(crate) rule full_expression() -> ast::ArithmeticExpr =
-            ![_] { ast::ArithmeticExpr::Literal(0) } /
+            _ ![_] { ast::ArithmeticExpr::Literal(0) } /
             _ e:expression() _ { e }
 
         pub(crate) rule expression() -> ast::ArithmeticExpr = precedence!{
             x:(@) _ "," _ y:@ { ast::ArithmeticExpr::BinaryOp(ast::BinaryOperator::Comma, Box::new(x), Box::new(y)) }
             --
-            x:lvalue() _ "*=" _ y:(@) { ast::ArithmeticExpr::BinaryAssignment(ast::BinaryOperator::Multiply, x, Box::new(y)) }
-            x:lvalue() _ "/=" _ y:(@) { ast::ArithmeticExpr::BinaryAssignment(ast::BinaryOperator::Divide, x, Box::new(y)) }
-            x:lvalue() _ "%=" _ y:(@) { ast::ArithmeticExpr::BinaryAssignment(ast::BinaryOperator::Modulo, x, Box::new(y)) }
-            x:lvalue() _ "+=" _ y:(@) { ast::ArithmeticExpr::BinaryAssignment(ast::BinaryOperator::Add, x, Box::new(y)) }
-            x:lvalue() _ "-=" _ y:(@) { ast::ArithmeticExpr::BinaryAssignment(ast::BinaryOperator::Subtract, x, Box::new(y)) }
-            x:lvalue() _ "<<=" _ y:(@) { ast::ArithmeticExpr::BinaryAssignment(ast::BinaryOperator::ShiftLeft, x, Box::new(y)) }
-            x:lvalue() _ ">>=" _ y:(@) { ast::ArithmeticExpr::BinaryAssignment(ast::BinaryOperator::ShiftRight, x, Box::new(y)) }
-            x:lvalue() _ "&=" _ y:(@) { ast::ArithmeticExpr::BinaryAssignment(ast::BinaryOperator::BitwiseAnd, x, Box::new(y)) }
-            x:lvalue() _ "|=" _ y:(@) { ast::ArithmeticExpr::BinaryAssignment(ast::BinaryOperator::BitwiseOr, x, Box::new(y)) }
-            x:lvalue() _ "^=" _ y:(@) { ast::ArithmeticExpr::BinaryAssignment(ast::BinaryOperator::BitwiseXor, x, Box::new(y)) }
-            x:lvalue() _ "=" _ y:(@) { ast::ArithmeticExpr::Assignment(x, Box::new(y)) }
-            --
+            x:assignment() { x }
+        }
+
+        // Assignment sits outside the precedence table below. As in bash, only a variable
+        // or array element can be assigned to, so something like `-x = 1` or `(x) = 1` is
+        // an error instead of an assignment nested inside a unary or binary operator.
+        rule assignment() -> ast::ArithmeticExpr =
+            x:lvalue() _ op:assignment_operator() _ y:assignment() {
+                match op {
+                    Some(op) => ast::ArithmeticExpr::BinaryAssignment(op, x, Box::new(y)),
+                    None => ast::ArithmeticExpr::Assignment(x, Box::new(y)),
+                }
+            } /
+            conditional()
+
+        rule assignment_operator() -> Option<ast::BinaryOperator> =
+            "*=" { Some(ast::BinaryOperator::Multiply) } /
+            "/=" { Some(ast::BinaryOperator::Divide) } /
+            "%=" { Some(ast::BinaryOperator::Modulo) } /
+            "+=" { Some(ast::BinaryOperator::Add) } /
+            "-=" { Some(ast::BinaryOperator::Subtract) } /
+            "<<=" { Some(ast::BinaryOperator::ShiftLeft) } /
+            ">>=" { Some(ast::BinaryOperator::ShiftRight) } /
+            "&=" { Some(ast::BinaryOperator::BitwiseAnd) } /
+            "|=" { Some(ast::BinaryOperator::BitwiseOr) } /
+            "^=" { Some(ast::BinaryOperator::BitwiseXor) } /
+            "=" !"=" { None }
+
+        rule conditional() -> ast::ArithmeticExpr = precedence!{
             x:@ _ "?" _ y:expression() _ ":" _ z:(@) { ast::ArithmeticExpr::Conditional(Box::new(x), Box::new(y), Box::new(z)) }
             --
             x:(@) _ "||" _ y:@ { ast::ArithmeticExpr::BinaryOp(ast::BinaryOperator::LogicalOr, Box::new(x), Box::new(y)) }
@@ -168,4 +187,24 @@ fn parse_shell_literal_number(s: &str, radix: u64) -> Result<i64, &'static str> 
     }
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_blank_expression_yields_zero() {
+        for input in ["", " ", "\t", " \n "] {
+            assert!(
+                matches!(parse(input), Ok(ast::ArithmeticExpr::Literal(0))),
+                "expected 0 for {input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_rejects_an_incomplete_expression() {
+        assert!(parse("1 +").is_err());
+    }
 }

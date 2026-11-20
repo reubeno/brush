@@ -1,0 +1,172 @@
+name: "External commands"
+# These cases run brush itself ("$0") as the external command, so that they need
+# no other program and run on every platform that can start processes.
+incompatible_platforms: ["wasi"] # (No processes to start)
+cases:
+  - name: "Output goes to the shell's streams"
+    stdin: |
+      "$0" -c 'echo out; echo err >&2'
+    expected_exit_code: 0
+    expected_stdout: |
+      out
+    expected_stderr: |
+      err
+
+  - name: "Standard output redirected to the shell's standard error"
+    stdin: |
+      "$0" -c 'echo out' >&2
+    expected_exit_code: 0
+    expected_stdout: ""
+    expected_stderr: |
+      out
+
+  - name: "Standard error redirected to the shell's standard output"
+    stdin: |
+      "$0" -c 'echo err >&2' 2>&1
+    expected_exit_code: 0
+    expected_stdout: |
+      err
+    expected_stderr: ""
+
+  - name: "Standard output and error swapped"
+    stdin: |
+      "$0" -c 'echo out; echo err >&2' 3>&1 1>&2 2>&3 3>&-
+    expected_exit_code: 0
+    expected_stdout: |
+      err
+    expected_stderr: |
+      out
+
+  - name: "Output to files"
+    stdin: |
+      "$0" -c 'echo out; echo err >&2' > out.txt 2> err.txt
+      "$0" -c 'echo more' >> out.txt
+      mapfile -t lines < out.txt
+      read -r e < err.txt
+      echo "out: ${lines[*]}; err: ${e}"
+    expected_exit_code: 0
+    expected_stdout: |
+      out: out more; err: err
+    expected_stderr: ""
+
+  - name: "Closed standard output isn't the shell's"
+    stdin: |
+      "$0" -c 'echo hidden' >&-
+      echo after
+    expected_exit_code: 0
+    expected_stdout: |
+      after
+
+  - name: "Closed standard input can't be read"
+    stdin: |
+      "$0" -c 'read -r l; echo "read: $?"' <&-
+    expected_exit_code: 0
+    expected_stdout: |
+      read: 1
+
+  - name: "Input from a here-document, a file, and a pipe"
+    stdin: |
+      echo from-file > in.txt
+      "$0" -c 'read -r l; echo "got: $l"' <<EOF
+      from-heredoc
+      EOF
+      "$0" -c 'read -r l; echo "got: $l"' < in.txt
+      echo from-pipe | "$0" -c 'read -r l; echo "got: $l"'
+    expected_exit_code: 0
+    expected_stdout: |
+      got: from-heredoc
+      got: from-file
+      got: from-pipe
+    expected_stderr: ""
+
+  - name: "Pipeline of external commands"
+    stdin: |
+      "$0" -c 'echo a; echo b' | "$0" -c 'while read -r l; do echo "[$l]"; done'
+    expected_exit_code: 0
+    expected_stdout: |
+      [a]
+      [b]
+    expected_stderr: ""
+
+  - name: "Exported variables reach the command"
+    stdin: |
+      export EXPORTED=yes
+      NOT_EXPORTED=no
+      "$0" -c 'echo "exported: ${EXPORTED-unset}; not: ${NOT_EXPORTED-unset}"'
+      PREFIXED=one "$0" -c 'echo "prefixed: $PREFIXED"'
+    expected_exit_code: 0
+    expected_stdout: |
+      exported: yes; not: unset
+      prefixed: one
+    expected_stderr: ""
+
+  - name: "Exported functions reach the command"
+    stdin: |
+      f() { echo "in f"; }
+      export -f f
+      "$0" -c 'f'
+    expected_exit_code: 0
+    expected_stdout: |
+      in f
+    expected_stderr: ""
+
+  - name: "_ is the path the command was run by"
+    stdin: |
+      underscore=$("$0" -c 'echo "$_"')
+      [[ ${underscore} == "$0" ]] && echo "same path" || echo "differs: ${underscore} vs $0"
+    expected_exit_code: 0
+    expected_stdout: |
+      same path
+    expected_stderr: ""
+
+  - name: "Exit status"
+    stdin: |
+      "$0" -c 'exit 7'
+      echo "status: $?"
+    expected_exit_code: 0
+    expected_stdout: |
+      status: 7
+    expected_stderr: ""
+
+  - name: "Working directory"
+    test_files:
+      - path: "sub/.keep"
+    stdin: |
+      cd sub
+      "$0" -c 'p=$(pwd); echo "${p##*[\\/]}"'
+    expected_exit_code: 0
+    expected_stdout: |
+      sub
+    expected_stderr: ""
+
+  - name: "Missing program"
+    stdin: |
+      ./no-such-program
+      echo "status: $?"
+    expected_exit_code: 0
+    expected_stdout: |
+      status: 127
+
+  - name: "Program that isn't executable"
+    incompatible_platforms: ["windows"] # (Whether a file can be run depends on its extension there)
+    test_files:
+      - path: "not-executable"
+        contents: |
+          #!/bin/sh
+          echo "ran"
+    stdin: |
+      ./not-executable
+      echo "status: $?"
+    expected_exit_code: 0
+    expected_stdout: |
+      status: 126
+
+  - name: "Other file descriptors"
+    incompatible_platforms: ["windows"] # (Only the standard streams can be handed to a process there)
+    stdin: |
+      # (brush takes up only the descriptors it's told to inherit.)
+      "$0" --inherit-fd=3 -c 'echo via-fd-3 >&3' 3>&1
+    expected_exit_code: 0
+    expected_stdout: |
+      via-fd-3
+    expected_stderr: ""

@@ -61,6 +61,18 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     #[cfg_attr(feature = "serde", serde(skip, default = "default_error_formatter"))]
     error_formatter: SE::ErrorFormatter,
 
+    /// Injected process launcher.
+    #[cfg_attr(feature = "serde", serde(skip, default = "default_process_launcher"))]
+    process_launcher: SE::ProcessLauncher,
+
+    /// Injected task spawner.
+    #[cfg_attr(feature = "serde", serde(skip, default = "default_task_spawner"))]
+    task_spawner: SE::TaskSpawner,
+
+    /// The builtins' state; see [`crate::ExecutionContext::state_mut`].
+    #[cfg_attr(feature = "serde", serde(skip, default))]
+    builtin_states: builtins::BuiltinStates,
+
     /// Trap handler configuration for the shell.
     traps: crate::traps::TrapHandlerConfig,
 
@@ -101,6 +113,10 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     /// Clone depth from the original ancestor shell.
     depth: usize,
 
+    /// The number the `\#` prompt escape shows: 1, plus one for each command the
+    /// interactive loop has run.
+    command_number: usize,
+
     /// Shell name
     name: Option<String>,
 
@@ -119,12 +135,12 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     /// Directory stack used by pushd et al.
     directory_stack: Vec<PathBuf>,
 
-    /// Completion configuration.
-    completion_config: crate::completion::Config,
+    /// Programmable completion state.
+    completion: crate::completion::State,
 
     /// Shell built-in commands.
     #[cfg_attr(feature = "serde", serde(skip))]
-    builtins: HashMap<String, builtins::Registration<SE>>,
+    builtins: builtins::Registry<SE>,
 
     /// Shell program location cache.
     program_location_cache: pathcache::PathCache,
@@ -151,6 +167,9 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
     fn clone(&self) -> Self {
         Self {
             error_formatter: self.error_formatter.clone(),
+            process_launcher: self.process_launcher.clone(),
+            task_spawner: self.task_spawner.clone(),
+            builtin_states: self.builtin_states.clone(),
             traps: self.traps.clone(),
             open_files: self.open_files.clone(),
             working_dir: self.working_dir.clone(),
@@ -175,7 +194,10 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
                 cs
             },
             directory_stack: self.directory_stack.clone(),
-            completion_config: self.completion_config.clone(),
+            // A subshell of a completion function (e.g. `$(compgen ...)`) is in that
+            // completion too. Like a forked subshell in bash, it changes only its own copy
+            // (e.g. with `compopt`), which its parent doesn't see.
+            completion: self.completion.clone(),
             builtins: self.builtins.clone(),
             program_location_cache: self.program_location_cache.clone(),
             last_stopwatch_time: self.last_stopwatch_time,
@@ -184,6 +206,7 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
             key_bindings: self.key_bindings.clone(),
             history: self.history.clone(),
             depth: self.depth + 1,
+            command_number: self.command_number,
         }
     }
 }
@@ -214,6 +237,9 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         // Instantiate the shell with some defaults.
         let mut shell = Self {
             error_formatter: options.error_formatter,
+            process_launcher: options.process_launcher,
+            task_spawner: options.task_spawner,
+            builtin_states: builtins::BuiltinStates::default(),
             open_files: openfiles::OpenFiles::new(),
             options: runtime_options,
             name: options.shell_name,
@@ -261,13 +287,18 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
 
 impl<SE: extensions::ShellExtensions> Shell<SE> {
     /// Increments the interactive line offset in the shell by the indicated number
-    /// of lines.
+    /// of lines. The interactive loop calls this once after each command it runs, so
+    /// it also advances the command number that the `\#` prompt escape shows.
     ///
     /// # Arguments
     ///
     /// * `delta` - The number of lines to increment the current line offset by.
     pub fn increment_interactive_line_offset(&mut self, delta: usize) {
         self.call_stack.increment_current_line_offset(delta);
+        // shortcut: counts every line the loop runs, which bash doesn't for blank, comment-only
+        // or unparsable ones or for a bound key; count where the reader loop parses, once it's
+        // in core.
+        self.command_number += 1;
     }
 
     /// Updates the currently executing command in the shell.
@@ -309,6 +340,36 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
             .set_global("_", crate::variables::ShellVariable::new(value));
     }
 
+    /// Captures the state the last command left behind; see [`SavedCommandStatus`].
+    pub fn save_command_status(&self) -> SavedCommandStatus {
+        SavedCommandStatus {
+            exit_status: self.last_exit_status,
+            exit_status_change_count: self.last_exit_status_change_count,
+            pipeline_statuses: self.last_pipeline_statuses.clone(),
+            last_arg: self.env_str("_").map(|value| value.into_owned()),
+        }
+    }
+
+    /// Reapplies a snapshot, exit-status change counter included. Consumes it; `clone` it to
+    /// put the same one back more than once, e.g. between successive hook functions.
+    ///
+    /// # Arguments
+    ///
+    /// * `saved` - The snapshot to restore.
+    pub fn restore_command_status(&mut self, saved: SavedCommandStatus) {
+        self.last_pipeline_statuses = saved.pipeline_statuses;
+        // Assigned directly rather than through `set_last_exit_status`, which would bump
+        // the change counter we're about to put back.
+        self.last_exit_status = saved.exit_status;
+        self.last_exit_status_change_count = saved.exit_status_change_count;
+        match saved.last_arg {
+            Some(last_arg) => self.update_last_arg_variable(Some(last_arg)),
+            // `_` was unset when the snapshot was taken, so put it back that way. Unsetting
+            // a readonly `_` fails; ignore that, as `update_last_arg_variable` does.
+            None => _ = self.env.unset("_"),
+        }
+    }
+
     /// Applies errexit semantics to a result if enabled and appropriate.
     /// This should be called at "statement boundaries" where errexit should be checked.
     ///
@@ -324,13 +385,20 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         }
     }
 
-    /// Returns the keywords that are reserved by the shell.
-    pub(crate) fn get_keywords(&self) -> impl IntoIterator<Item = &str> {
-        if self.options.sh_mode {
-            keywords::SH_MODE_KEYWORDS.iter().copied()
-        } else {
-            keywords::KEYWORDS.iter().copied()
-        }
+    /// Returns the keywords that are reserved by the shell, in the order bash lists them.
+    pub(crate) fn get_keywords(&self) -> impl IntoIterator<Item = &'static str> {
+        keywords::keywords(self.options.sh_mode)
+    }
+
+    /// Returns the launcher that starts the processes the shell runs.
+    pub const fn process_launcher(&self) -> &SE::ProcessLauncher {
+        &self.process_launcher
+    }
+
+    /// Returns the spawner that starts the tasks the shell runs concurrently with
+    /// itself.
+    pub const fn task_spawner(&self) -> &SE::TaskSpawner {
+        &self.task_spawner
     }
 
     /// Checks if the given string is a keyword reserved in this shell.
@@ -339,16 +407,29 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
     ///
     /// * `s` - The string to check.
     pub fn is_keyword(&self, s: &str) -> bool {
-        if self.options.sh_mode {
-            keywords::SH_MODE_KEYWORDS.contains(s)
-        } else {
-            keywords::KEYWORDS.contains(s)
-        }
+        keywords::keywords(self.options.sh_mode).any(|keyword| keyword == s)
     }
 
     pub(crate) const fn last_exit_status_change_count(&self) -> usize {
         self.last_exit_status_change_count
     }
+
+    pub(crate) const fn command_number(&self) -> usize {
+        self.command_number
+    }
+}
+
+/// Snapshot of the state the last command left behind: `$?`, `PIPESTATUS`, and `$_`.
+///
+/// Take one with [`Shell::save_command_status`] and put it back with
+/// [`Shell::restore_command_status`] around anything the user didn't type -- a shell hook,
+/// `PROMPT_COMMAND`, prompt expansion -- so it stays invisible to the next command.
+#[derive(Clone, Debug)]
+pub struct SavedCommandStatus {
+    exit_status: u8,
+    exit_status_change_count: usize,
+    pipeline_statuses: Vec<u8>,
+    last_arg: Option<String>,
 }
 
 #[inherent::inherent]
@@ -450,12 +531,12 @@ impl<SE: extensions::ShellExtensions> ShellState for Shell<SE> {
 
     /// Returns the shell's completion configuration.
     pub fn completion_config(&self) -> &crate::completion::Config {
-        &self.completion_config
+        &self.completion.config
     }
 
     /// Returns a mutable reference to the shell's completion configuration.
     pub fn completion_config_mut(&mut self) -> &mut crate::completion::Config {
-        &mut self.completion_config
+        &mut self.completion.config
     }
 
     /// Returns the shell's open files.
@@ -511,8 +592,9 @@ impl<SE: extensions::ShellExtensions> ShellState for Shell<SE> {
         self.last_exit_status
     }
 
-    /// Updates the last exit status. To *restore* a saved status, restore
-    /// `last_exit_status_change_count` as well.
+    /// Updates the last exit status, bumping `last_exit_status_change_count`. To *restore* a
+    /// status rather than set one, use [`Self::restore_command_status`], which puts the
+    /// counter back too.
     pub fn set_last_exit_status(&mut self, status: u8) {
         self.last_exit_status = status;
         self.last_exit_status_change_count += 1;
@@ -548,4 +630,70 @@ impl<SE: extensions::ShellExtensions> ShellState for Shell<SE> {
 #[cfg(feature = "serde")]
 fn default_error_formatter<EF: extensions::ErrorFormatter>() -> EF {
     EF::default()
+}
+
+#[cfg(feature = "serde")]
+fn default_process_launcher<PL: extensions::ProcessLauncher>() -> PL {
+    PL::default()
+}
+
+#[cfg(feature = "serde")]
+fn default_task_spawner<TS: extensions::TaskSpawner>() -> TS {
+    TS::default()
+}
+
+#[cfg(test)]
+#[allow(clippy::panic_in_result_fn, reason = "assertions in a fallible test")]
+mod tests {
+    use super::*;
+
+    /// `$_` round-trips through a snapshot, unset included, so an embedder that saves before
+    /// running commands of its own gets back exactly what was there -- not an empty string.
+    /// (The interactive loop can't reach the unset case: every command resets `$_`.)
+    #[tokio::test]
+    async fn saved_command_status_round_trips_last_arg() -> Result<(), error::Error> {
+        let mut shell = Shell::builder()
+            .profile(ProfileLoadBehavior::Skip)
+            .rc(RcLoadBehavior::Skip)
+            .build()
+            .await?;
+
+        shell.update_last_arg_variable(Some(String::from("saved")));
+        let with_value = shell.save_command_status();
+
+        shell.env.unset("_")?;
+        let while_unset = shell.save_command_status();
+
+        shell.restore_command_status(with_value);
+        assert_eq!(shell.env_str("_").as_deref(), Some("saved"));
+
+        shell.restore_command_status(while_unset);
+        assert_eq!(shell.env_str("_"), None);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn unset_env_str_contract_is_independent_of_ifs_default() -> Result<(), error::Error> {
+        let mut shell = Shell::builder()
+            .profile(ProfileLoadBehavior::Skip)
+            .rc(RcLoadBehavior::Skip)
+            .build()
+            .await?;
+
+        shell.env.set_global(
+            "IFS",
+            crate::ShellVariable::new(crate::ShellValue::Unset(
+                crate::variables::ShellValueUnsetType::Untyped,
+            )),
+        )?;
+        assert_eq!(shell.env_str("IFS").as_deref(), Some(""));
+        assert_eq!(shell.ifs(), " \t\n");
+
+        shell.env.set_global("IFS", crate::ShellVariable::new(""))?;
+        assert_eq!(shell.env_str("IFS").as_deref(), Some(""));
+        assert_eq!(shell.ifs(), "");
+
+        Ok(())
+    }
 }

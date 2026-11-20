@@ -1,17 +1,24 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins, timing};
 
 /// Report on usage time.
-#[derive(Parser)]
-pub(crate) struct TimesCommand {}
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
+pub(crate) struct TimesCommand {
+    /// Operands, which are ignored. Options before the first operand are
+    /// still misuse; everything after it is an operand.
+    #[arg(positional, stop_flags, hide)]
+    _operands: Vec<String>,
+}
 
-impl builtins::Command for TimesCommand {
+brush_winnow_args_adapter::impl_parse_args!(TimesCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for TimesCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         let (self_user, self_system) = brush_core::sys::resource::get_self_user_and_system_time()?;

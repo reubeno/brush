@@ -1,23 +1,26 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins, jobs, sys};
 
 /// Move a specified job to the foreground.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct FgCommand {
     /// Job spec for the job to move to the foreground; if not specified, the current job is moved.
+    #[arg(positional)]
     job_spec: Option<String>,
 }
 
-impl builtins::Command for FgCommand {
+brush_winnow_args_adapter::impl_parse_args!(FgCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for FgCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let mut stderr = context.stdout();
+        let mut stdout = context.stdout();
 
         // Read interactive option before taking mutable borrow on jobs
         let is_interactive = context.shell.options().interactive;
@@ -25,7 +28,7 @@ impl builtins::Command for FgCommand {
         if let Some(job_spec) = &self.job_spec {
             if let Some(job) = context.shell.jobs_mut().resolve_job_spec(job_spec) {
                 job.move_to_foreground()?;
-                writeln!(stderr, "{}", job.command_line)?;
+                writeln!(stdout, "{}", job.command_line)?;
 
                 let result = job.wait().await?;
                 if is_interactive {
@@ -41,16 +44,17 @@ impl builtins::Command for FgCommand {
                 Ok(result)
             } else {
                 writeln!(
-                    stderr,
+                    context.stderr(),
                     "{}: {}: no such job",
-                    job_spec, context.command_name
+                    context.command_name,
+                    job_spec
                 )?;
                 Ok(ExecutionResult::general_error())
             }
         } else {
             if let Some(job) = context.shell.jobs_mut().current_job_mut() {
                 job.move_to_foreground()?;
-                writeln!(stderr, "{}", job.command_line)?;
+                writeln!(stdout, "{}", job.command_line)?;
 
                 let result = job.wait().await?;
                 if is_interactive {
@@ -65,7 +69,7 @@ impl builtins::Command for FgCommand {
 
                 Ok(result)
             } else {
-                writeln!(stderr, "{}: no current job", context.command_name)?;
+                writeln!(context.stderr(), "{}: no current job", context.command_name)?;
                 Ok(ExecutionResult::general_error())
             }
         }

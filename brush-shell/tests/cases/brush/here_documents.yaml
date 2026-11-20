@@ -1,0 +1,145 @@
+name: "Here-documents and here-strings"
+# These cases use only builtins, so they also run under WASI
+# (`cargo xtask test integration --wasi`).
+cases:
+  - name: "Here-document into a read loop"
+    stdin: |
+      while read -r a b; do echo "$b-$a"; done <<EOF
+      one 1
+      two 2
+      EOF
+    expected_exit_code: 0
+    expected_stdout: |
+      1-one
+      2-two
+    expected_stderr: ""
+
+  - name: "Expansion in an unquoted here-document"
+    stdin: |
+      name=world
+      while read -r line; do echo "$line"; done <<EOF
+      hello $name
+      sum $((1 + 2))
+      cmd $(echo output)
+      EOF
+    expected_exit_code: 0
+    expected_stdout: |
+      hello world
+      sum 3
+      cmd output
+    expected_stderr: ""
+
+  - name: "No expansion with a quoted delimiter"
+    stdin: |
+      name=world
+      while read -r line; do echo "$line"; done <<'EOF'
+      hello $name
+      sum $((1 + 2))
+      EOF
+    expected_exit_code: 0
+    expected_stdout: |
+      hello $name
+      sum $((1 + 2))
+    expected_stderr: ""
+
+  - name: "Here-strings"
+    stdin: |
+      read -r a b <<< "first second"
+      echo "$b $a"
+      read -r x <<< $((6 * 7))
+      echo "$x"
+    expected_exit_code: 0
+    expected_stdout: |
+      second first
+      42
+    expected_stderr: ""
+
+  - name: "Multi-line here-string into mapfile"
+    stdin: |
+      v=$'l1\nl2\nl3'
+      mapfile -t arr <<< "$v"
+      echo "${#arr[@]} ${arr[2]}"
+    expected_exit_code: 0
+    expected_stdout: |
+      3 l3
+    expected_stderr: ""
+
+  - name: "A large here-string"
+    # TODO(redirection): hangs on macOS and Windows: a here-string's contents are written into a
+    # pipe before anything reads it, and only on Linux is the pipe made big enough to hold them.
+    incompatible_platforms: ["macos", "windows"]
+    stdin: |
+      pad=
+      for ((i = 0; i < 10; i++)); do pad+=0123456789; done
+      big=$(for ((i = 0; i < 1000; i++)); do echo "row $i $pad"; done)
+      echo "${#big}"
+      n=0
+      while read -r _ i _; do n=$((n + 1)); last=$i; done <<< "$big"
+      echo "$n $last"
+    expected_exit_code: 0
+    expected_stdout: |
+      108889
+      1000 999
+    expected_stderr: ""
+
+  - name: "Here-document into a function"
+    stdin: |
+      f() { while read -r l; do echo "f:$l"; done; }
+      f <<EOF
+      x
+      y
+      EOF
+    expected_exit_code: 0
+    expected_stdout: |
+      f:x
+      f:y
+    expected_stderr: ""
+
+  - name: "Here-document on another file descriptor"
+    stdin: |
+      read -r -u 3 v 3<<EOF
+      three
+      EOF
+      echo "$v"
+    expected_exit_code: 0
+    expected_stdout: |
+      three
+    expected_stderr: ""
+
+  - name: "Here-document feeding a pipeline"
+    stdin: |
+      while read -r l; do echo "$l"; done <<EOF | { read -r first; read -r second; echo "$second,$first"; }
+      A
+      B
+      EOF
+    expected_exit_code: 0
+    expected_stdout: |
+      B,A
+    expected_stderr: ""
+
+  - name: "Here-document inside a substitution"
+    stdin: |
+      x=$(while read -r l; do echo -n "$l"; done <<EOF
+      ab
+      cd
+      EOF
+      )
+      echo "$x"
+    expected_exit_code: 0
+    expected_stdout: |
+      abcd
+    expected_stderr: ""
+
+  - name: "Here-documents in a loop"
+    stdin: |
+      for i in 1 2; do
+        read -r v <<EOF
+      val$i
+      EOF
+        echo "$v"
+      done
+    expected_exit_code: 0
+    expected_stdout: |
+      val1
+      val2
+    expected_stderr: ""

@@ -63,14 +63,14 @@ impl Config {
     /// 2. Config file values
     /// 3. Default values
     ///
-    /// CLI defaults are automatically inferred from clap's parsed defaults.
+    /// CLI defaults are inferred by parsing an empty command line.
     ///
     /// # Arguments
     ///
     /// * `args` - The parsed command-line arguments
     #[must_use]
-    pub fn to_ui_options(&self, args: &CommandLineArgs) -> UIOptions {
-        // Get clap's defaults by parsing an empty argument list.
+    pub(crate) fn to_ui_options(&self, args: &CommandLineArgs) -> UIOptions {
+        // Get the defaults by parsing an empty argument list.
         // This lets us detect which CLI values were explicitly set vs. defaulted.
         let defaults = CommandLineArgs::default_values();
 
@@ -283,7 +283,6 @@ pub fn load_config(disabled: bool, explicit_path: Option<&Path>) -> ConfigLoadRe
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clap::Parser;
 
     #[test]
     fn empty_config() {
@@ -414,11 +413,9 @@ mod tests {
 
         // Simulate CLI explicitly setting values different from defaults
         // by parsing with the flags enabled
-        let args = CommandLineArgs::try_parse_from([
-            "brush",
-            "--enable-highlighting",
-            "--enable-zsh-hooks",
-        ])
+        let args = CommandLineArgs::parse_shell_args(
+            ["brush", "--enable-highlighting", "--enable-zsh-hooks"].map(String::from),
+        )
         .unwrap();
 
         // CLI explicitly enables highlighting and zsh-hooks (differs from default)
@@ -431,11 +428,9 @@ mod tests {
     #[test]
     fn to_ui_options_cli_only_settings() {
         let config = Config::default();
-        let args = CommandLineArgs::try_parse_from([
-            "brush",
-            "--disable-bracketed-paste",
-            "--disable-color",
-        ])
+        let args = CommandLineArgs::parse_shell_args(
+            ["brush", "--disable-bracketed-paste", "--disable-color"].map(String::from),
+        )
         .unwrap();
 
         let ui = config.to_ui_options(&args);

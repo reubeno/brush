@@ -1,13 +1,12 @@
 use std::io::Write;
 
-use clap::Parser;
-
 use brush_core::{ExecutionResult, builtins};
 
 use crate::lookup::{self, Resolved};
 
 /// Inspect the type of a named shell item.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct TypeCommand {
     /// Display all locations of the specified name, not just the first.
     #[arg(short = 'a')]
@@ -31,14 +30,17 @@ pub(crate) struct TypeCommand {
     type_only: bool,
 
     /// Names to search for.
+    #[arg(positional)]
     names: Vec<String>,
 }
 
-impl builtins::Command for TypeCommand {
+brush_winnow_args_adapter::impl_parse_args!(TypeCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for TypeCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut result = ExecutionResult::success();

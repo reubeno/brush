@@ -1,51 +1,35 @@
 //! Builtin command management for shell instances.
 
-use std::collections::HashMap;
-
 use crate::{builtins, extensions};
 
 impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
-    /// Register a builtin to the shell's environment, replacing any existing
-    /// registration with the same name.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The in-shell name of the builtin.
-    /// * `registration` - The registration handle for the builtin.
-    pub fn register_builtin<S: Into<String>>(
-        &mut self,
-        name: S,
-        registration: builtins::Registration<SE>,
-    ) {
-        self.builtins.insert(name.into(), registration);
-    }
-
-    /// Register a builtin only if no builtin with that name is already registered.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The in-shell name of the builtin.
-    /// * `registration` - The registration handle for the builtin.
-    pub fn register_builtin_if_unset<S: Into<String>>(
-        &mut self,
-        name: S,
-        registration: builtins::Registration<SE>,
-    ) {
-        self.builtins.entry(name.into()).or_insert(registration);
-    }
-
-    /// Tries to retrieve a mutable reference to an existing builtin registration.
-    /// Returns `None` if no such registration exists.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the builtin to lookup.
-    pub fn builtin_mut(&mut self, name: &str) -> Option<&mut builtins::Registration<SE>> {
-        self.builtins.get_mut(name)
-    }
-
-    /// Returns the registered builtins for the shell.
-    pub const fn builtins(&self) -> &HashMap<String, builtins::Registration<SE>> {
+    /// Returns the builtins registered with the shell.
+    pub const fn builtins(&self) -> &builtins::Registry<SE> {
         &self.builtins
+    }
+
+    /// Returns the builtins registered with the shell, to register, enable or
+    /// disable them.
+    pub const fn builtins_mut(&mut self) -> &mut builtins::Registry<SE> {
+        &mut self.builtins
+    }
+
+    /// Returns the builtin state of type `S` (see
+    /// [`crate::ExecutionContext::state_mut`]), if a builtin has used it.
+    pub fn builtin_state<S: 'static>(&self) -> Option<&S> {
+        self.builtin_states.get()
+    }
+
+    /// Sets the builtin state of type `S` (see
+    /// [`crate::ExecutionContext::state_mut`]), replacing any there was. A
+    /// builtin then starts from this value rather than from `S::default()`, so
+    /// the program embedding the shell can hand its builtins a value of its
+    /// own: a handle it keeps a clone of, or settings it read elsewhere.
+    pub fn set_builtin_state<S: Clone + Send + Sync + 'static>(&mut self, state: S) {
+        self.builtin_states.set(state);
+    }
+
+    pub(crate) const fn builtin_states_mut(&mut self) -> &mut builtins::BuiltinStates {
+        &mut self.builtin_states
     }
 }

@@ -387,7 +387,158 @@ cases:
       echo "\${myarray[@]}:" ${myarray[@]}
       echo "\${myarray[*]}:" ${myarray[*]}
 
+  #
+  # Field splitting applies to what an expansion produced, not to the literal text around it. A
+  # compound value's elements are separated by the parser on whitespace; an IFS character sitting
+  # in literal text is just a character.
+  #
+  - name: "Literal text in a compound value is not field-split"
+    stdin: |
+      IFS=,
+      arr=(a,b)
+      declare -p arr
+
+  - name: "A compound value field-splits an expansion but not the literal beside it"
+    stdin: |
+      IFS=,
+      v="p,q"
+      arr=(a,b $v keep,me)
+      declare -p arr
+
   - name: "Empty array with newline"
     stdin: |
       declare -a myarray=(
       )
+
+  - name: "Parenthesized arithmetic in array index assignment"
+    known_failure: true # TODO(tokenizer): #1211: '(' inside an assignment's subscript is tokenized as an operator
+    stdin: |
+      c[(1)]=x
+      declare -p c
+      i=1
+      d[(i+1)*2]=y
+      declare -p d
+
+  - name: "Compound assignment appends to an element with [key]+="
+    known_failure: true # TODO(parser): an element's += isn't parsed, so the word is taken as a value
+    stdin: |
+      a=(x y)
+      a+=([0]+=z)
+      declare -p a
+      declare -A m=([k]=v)
+      m+=([k]+=w [j]+=u)
+      declare -p m
+      declare -a d=(p q)
+      declare -a d+=([1]+=r)
+      declare -p d
+
+  - name: "Compound assignment evaluates an indexed array's subscripts"
+    known_failure: true # TODO(arrays): an element's subscript isn't evaluated as arithmetic
+    stdin: |
+      a=([1+1]=x)
+      declare -p a
+      i=1
+      declare -a b=([i+1]=y [i*5]=z)
+      declare -p b
+
+  #
+  # Ordering between value expansion and subscript evaluation. A shell expands an
+  # assignment's words before it evaluates any arithmetic subscript, so side effects
+  # in a subscript are not visible to the value being assigned.
+  #
+  - name: "Index arithmetic is evaluated after the value is expanded"
+    stdin: |
+      i=0
+      a[i++]=$i
+      declare -p a
+      echo "i=$i"
+
+  - name: "Append with an arithmetic subscript"
+    stdin: |
+      i=0
+      a[i++]=$i
+      a[i++]+=$i
+      declare -p a
+      echo "i=$i"
+
+  - name: "Associative subscripts are not arithmetically evaluated"
+    stdin: |
+      i=0
+      declare -A m
+      m[i++]=$i
+      declare -p m
+      echo "i=$i"
+
+  - name: "Associative subscript is expanded once in a plain assignment"
+    stdin: |
+      declare -A m
+      k='$(echo expanded-twice)'
+      m[$k]=v
+      declare -p m
+
+  #
+  # An empty subscript in a parameter reference is rejected while the word is parsed, before any
+  # array is consulted.
+  #
+  - name: "An empty subscript is a bad substitution"
+    known_failure: true # TODO: the word parser accepts an empty subscript and treats it as element 0
+    ignore_stderr: true
+    stdin: |
+      zz_a=(1 2 3)
+      echo "[${zz_a[]}]"
+      echo "status: $?"
+
+  - name: "Compound assignment with a subscript at the edge of the index range"
+    known_failure: true # TODO(arrays): subscripts aren't evaluated, so the next index overflows (a panic in debug builds)
+    ignore_stderr: true
+    stdin: |
+      (a=([0]=keep [18446744073709551615]=x y); declare -p a)
+      (a=([18446744073709551615]=x y); declare -p a); echo "rc=$?"
+      (a=([9223372036854775807]=x y); declare -p a); echo "rc=$?"
+      (a=([18446744073709551614]=x); a+=(y z); declare -p a); echo "rc=$?"
+
+  - name: "Negative index into sparse indexed array"
+    stdin: |
+      b=(a b c d)
+      b[5]=q
+      echo "<${b[-2]}> <${b[-1]}>"
+      b[-2]=Z
+      b[-1]+=r
+      declare -p b
+      unset 'b[-3]'
+      declare -p b
+
+  #
+  # Assigning a list to a single array element is an error; the shell reports it and
+  # continues with a failure status.
+  #
+  - name: "Assigning a list to an element of an existing array fails"
+    ignore_stderr: true
+    stdin: |
+      a=(1 2)
+      a[0]=(9 9)
+      echo "status: $?"
+      declare -p a
+
+  - name: "Assigning a list to an element of an unset variable fails"
+    ignore_stderr: true
+    stdin: |
+      b[0]=(9 9)
+      echo "status: $?"
+      declare -p b 2>/dev/null
+      echo "status: $?"
+
+  - name: "Braces in a subscript assigned by a builtin"
+    stdin: |
+      declare -A m
+      printf -v "m[{a,b}]" 1
+      m[{e,f}]=3
+      for k in "${!m[@]}"; do echo "$k=${m[$k]}"; done | sort
+
+  - name: "read into an array element"
+    known_failure: true # TODO(builtins): read ignores a subscripted name
+    stdin: |
+      declare -A m
+      read -r "m[k]" <<< 1
+      read -r "m[{c,d}]" <<< 2
+      for k in "${!m[@]}"; do echo "$k=${m[$k]}"; done | sort

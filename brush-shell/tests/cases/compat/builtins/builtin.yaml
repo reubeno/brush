@@ -90,3 +90,45 @@ cases:
       v="x y"
       builtin declare c=$v
       declare -p c y
+
+  - name: "builtin splits assignment-shaped words for ordinary builtins"
+    known_failure: true # TODO(builtin): brush's builtin is a declaration utility, so a=$x isn't split
+    stdin: |
+      x="1 2"
+      builtin printf '[%s]' a=$x
+      echo
+
+  - name: "builtin --help prints help on stdout"
+    stdin: |
+      builtin --help >/dev/null 2>&1; echo "rc=$?"
+      [[ -n $(builtin --help 2>/dev/null) ]] && echo "help on stdout"
+
+  - name: "builtin rejects options"
+    ignore_stderr: true
+    stdin: |
+      builtin -z true; echo "rc=$?"
+      builtin -- true; echo "rc=$?"
+      builtin -- -z; echo "rc=$?"
+      builtin -; echo "rc=$?"
+      builtin -z -- true; echo "rc=$?"
+
+  - name: "builtin drops a special builtin's fatal errors in POSIX mode"
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      builtin export --bogus
+      echo "still running: $?"
+
+  - name: "builtin expands a ~ after the = of a declaration it passes on"
+    home_dir: .
+    stdin: |
+      test_root=~
+      builtin export y=~/z
+      echo "${y//${test_root}/ROOT}"
+      builtin declare d=~/w
+      echo "${d//${test_root}/ROOT}"
+
+  - name: "builtin passes --help on to the builtin it runs"
+    stdin: |
+      builtin cd --help >/dev/null 2>&1; echo "rc=$?"
+      [[ "$(builtin cd --help; echo .)" == "$(help cd; echo .)" ]] && echo "same as help cd"

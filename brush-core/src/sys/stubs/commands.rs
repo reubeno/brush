@@ -50,6 +50,31 @@ impl ExitStatusExt for std::process::ExitStatus {
     }
 }
 
+/// Replaces the current process with `command`; not supported on this platform.
+pub(crate) fn exec(_command: std::process::Command) -> std::io::Error {
+    std::io::ErrorKind::Unsupported.into()
+}
+
+/// Returns the standard stream for a process to have `file` as.
+pub(crate) fn stdio_for(file: openfiles::OpenFile) -> std::io::Result<std::process::Stdio> {
+    use std::process::Stdio;
+
+    match file {
+        // The shell's own output streams go to whichever stream the process has them as;
+        // e.g., the shell's stderr as the process's stdout, for `>&2`.
+        // TODO(redirection): the shell's stdin as an output stream (e.g., `>&0`) is
+        // inherited from the stream it replaces instead.
+        openfiles::OpenFile::Stdin(_) => Ok(Stdio::inherit()),
+        openfiles::OpenFile::Stdout(s) => Ok(s.into()),
+        openfiles::OpenFile::Stderr(s) => Ok(s.into()),
+        openfiles::OpenFile::File(f) => Ok(f.try_clone()?.into()),
+        openfiles::OpenFile::PipeReader(r) => Ok(r.try_clone()?.into()),
+        openfiles::OpenFile::PipeWriter(w) => Ok(w.try_clone()?.into()),
+        // A custom stream has no handle to give a process.
+        openfiles::OpenFile::Stream(_) => Ok(Stdio::null()),
+    }
+}
+
 /// Extension trait for injecting file descriptors into commands.
 pub trait CommandFdInjectionExt {
     /// Injects the given open files as file descriptors into the command.

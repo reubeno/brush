@@ -474,3 +474,54 @@ cases:
       echo "Result: $?"
       echo "arr[1]: ${arr[1]}"
       echo "ref: ${ref}"
+
+  - name: "getopts reads a leading -- as the end of its own options"
+    known_failure: true # TODO(getopts): its arguments are split at the first `--`, so a leading one isn't the end of getopts' own options
+    stdin: |
+      getopts -- ab opt -a
+      echo "status=$? opt=$opt"
+
+  - name: "getopts --help prints help on stdout"
+    stdin: |
+      getopts --help >/dev/null 2>&1; echo "rc=$?"
+      [[ -n $(getopts --help 2>/dev/null) ]] && echo "help on stdout"
+
+  - name: "getopts takes --help after its optstring as an argument"
+    stdin: |
+      set -- --help
+      getopts h opt "$@" 2>/dev/null; echo "rc=$? opt=$opt"
+      OPTIND=1
+      getopts ab opt -b --help; echo "rc=$? opt=$opt"
+
+  - name: "getopts rejects an option before its optstring"
+    ignore_stderr: true
+    stdin: |
+      getopts -x opt; echo "rc=$?"
+      getopts -x opt -x; echo "rc=$?"
+
+  - name: "getopts rejects a name that isn't an identifier"
+    stdin: |
+      strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
+      getopts a 1x -a 2>err.txt; echo "getopts: $?"; strip <err.txt
+      rm err.txt
+
+  - name: "getopts keeps its place in bundled options out of shell variables"
+    stdin: |
+      set -- -ab
+      getopts ab opt; echo "opt=$opt OPTIND=$OPTIND"
+      for name in $(compgen -v); do
+        [[ $name == *GETOPTS* ]] && echo "variable: $name=${!name}"
+      done
+      echo "prefixed: [${!__GETOPTS@}]"
+      getopts ab opt; echo "opt=$opt OPTIND=$OPTIND"
+
+  - name: "getopts' place in bundled options follows subshell rules"
+    stdin: |
+      set -- -ab -c
+      getopts abc opt; echo "1: opt=$opt OPTIND=$OPTIND"
+      (getopts abc opt; echo "subshell: opt=$opt OPTIND=$OPTIND")
+      echo "substitution: $(getopts abc opt; echo "opt=$opt OPTIND=$OPTIND")"
+      getopts abc opt; echo "2: opt=$opt OPTIND=$OPTIND"
+      getopts abc opt; echo "3: opt=$opt OPTIND=$OPTIND"
+      OPTIND=1
+      getopts abc opt; echo "after reset: opt=$opt OPTIND=$OPTIND"

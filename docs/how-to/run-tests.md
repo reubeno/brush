@@ -23,8 +23,8 @@ For comprehensive validation, use the CI workflows:
 # Quick inner-loop checks (~7s warm): fmt, build, lint, unit tests
 cargo xtask ci quick
 
-# Full pre-commit checks (~45s warm): quick + deps, schemas, integration tests
-cargo xtask ci pre-commit
+# Full workflow (~60s warm): quick + pre-commit hooks, schemas, integration tests
+cargo xtask ci full
 ```
 
 ## Manual Approach (Alternate)

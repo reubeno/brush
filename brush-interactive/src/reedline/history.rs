@@ -26,19 +26,6 @@ impl<SE: brush_core::ShellExtensions> reedline::History for ReedlineHistory<SE> 
         // in a non-reedline-specific way.
         //
 
-        // let brush_item = reedline_history_item_to_brush(&item);
-        // let mut shell = self.lock_shell();
-        // let history = get_shell_history_mut(&mut shell)?;
-        //
-        // if let Some(id) = &item.id {
-        //     history
-        //         .update_by_id(id.0, brush_item)
-        //         .map_err(brush_error_to_reedline)?;
-        // } else {
-        //     let id = history.add(brush_item).map_err(brush_error_to_reedline)?;
-        //     item.id = Some(reedline::HistoryItemId(id));
-        // }
-
         Ok(item)
     }
 
@@ -71,7 +58,10 @@ impl<SE: brush_core::ShellExtensions> reedline::History for ReedlineHistory<SE> 
         let query = reedline_history_query_into_brush(query)?;
 
         let shell = self.lock_shell();
-        let count = get_shell_history(&shell)?.search(query).iter().count();
+        let count = get_shell_history(&shell)?
+            .search(query)
+            .map_err(brush_error_to_reedline)?
+            .count();
         drop(shell);
 
         #[expect(clippy::cast_possible_wrap)]
@@ -157,20 +147,10 @@ impl<SE: brush_core::ShellExtensions> reedline::History for ReedlineHistory<SE> 
 fn brush_history_item_to_reedline(item: &brush_core::history::Item) -> reedline::HistoryItem {
     let mut rl_item = reedline::HistoryItem::from_command_line(item.command_line.as_str());
     rl_item.id = Some(reedline::HistoryItemId(item.id));
-    rl_item.start_timestamp = item.timestamp;
+    // `start_timestamp` is left unset: nothing reads it with this history (only reedline's
+    // sqlite backend does), and the item's timestamp stays available through brush's history.
 
     rl_item
-}
-
-#[expect(unused)]
-fn reedline_history_item_to_brush(item: &reedline::HistoryItem) -> brush_core::history::Item {
-    // TODO(history): implement more fields when they are added to Item
-    brush_core::history::Item {
-        id: item.id.map_or(0, |id| id.0),
-        command_line: item.command_line.clone(),
-        timestamp: item.start_timestamp,
-        dirty: true,
-    }
 }
 
 fn brush_error_to_reedline(error: brush_core::Error) -> reedline::ReedlineError {
@@ -196,16 +176,6 @@ fn reedline_history_query_into_brush(
         } else {
             query.end_id.map(|id| id.0)
         },
-        not_at_or_before_time: if matches!(query.direction, reedline::SearchDirection::Backward) {
-            query.end_time
-        } else {
-            query.start_time
-        },
-        not_at_or_after_time: if matches!(query.direction, reedline::SearchDirection::Backward) {
-            query.start_time
-        } else {
-            query.end_time
-        },
         ..Default::default()
     };
 
@@ -223,7 +193,11 @@ fn reedline_history_query_into_brush(
         }
     }
 
-    if query.filter.cwd_exact.is_some()
+    // Time bounds aren't supported: neither reedline nor brush sets them, and brush's
+    // timestamps aren't handed to reedline.
+    if query.start_time.is_some()
+        || query.end_time.is_some()
+        || query.filter.cwd_exact.is_some()
         || query.filter.cwd_prefix.is_some()
         || query.filter.exit_successful.is_some()
         || query.filter.hostname.is_some()
@@ -260,4 +234,44 @@ fn get_shell_history_mut<'a, SE: brush_core::ShellExtensions>(
             feature: "load",
         })
     })
+}
+
+#[cfg(test)]
+#[allow(clippy::panic_in_result_fn, reason = "assertions in a fallible test")]
+mod tests {
+    use super::*;
+    use reedline::History as _;
+
+    /// A count is of the items that match the query.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn count_counts_matching_items() -> Result<(), Box<dyn std::error::Error>> {
+        // An interactive shell keeps history; with no HISTFILE, it's not loaded or saved.
+        let mut shell = brush_core::Shell::builder()
+            .interactive(true)
+            .profile(brush_core::ProfileLoadBehavior::Skip)
+            .rc(brush_core::RcLoadBehavior::Skip)
+            .var("HISTFILE", brush_core::ShellVariable::new(""))
+            .build()
+            .await?;
+        let history = shell.history_mut().ok_or("no history")?;
+        for line in ["ls", "echo a", "echo b"] {
+            history.add(brush_core::history::Item::new(line))?;
+        }
+        let history = ReedlineHistory {
+            shell: std::sync::Arc::new(tokio::sync::Mutex::new(shell)),
+        };
+
+        let everything =
+            || reedline::SearchQuery::everything(reedline::SearchDirection::Backward, None);
+        assert_eq!(history.count(everything())?, 3);
+
+        let mut echo = everything();
+        echo.filter = reedline::SearchFilter::from_text_search(
+            reedline::CommandLineSearch::Prefix("echo".to_owned()),
+            None,
+        );
+        assert_eq!(history.count(echo)?, 2);
+
+        Ok(())
+    }
 }

@@ -3,6 +3,7 @@ use crate::{
     shell::Shell,
     sys::{self, users},
 };
+use brush_parser::prompt::PromptPiece;
 use std::path::Path;
 
 const VERSION_MAJOR: &str = env!("CARGO_PKG_VERSION_MAJOR");
@@ -19,40 +20,42 @@ pub(crate) async fn expand_prompt(
 
     // Now, render each piece.
     let mut formatted_prompt = String::new();
+    let expand = shell.options().expand_prompt_strings;
     for piece in prompt_pieces {
-        // Pieces that semantically represent a literal char (e.g. user wrote
-        // `\$` meaning a literal `$`, not input for pass-2 expansion). We
-        // prepend a `\` so pass 2 consumes it and leaves the char alone.
-        let semantically_literal =
-            matches!(piece, brush_parser::prompt::PromptPiece::DollarOrPound);
+        // When further expansion is enabled, we scope expansion to source text from
+        // the original prompt spec. That also includes handling `\\`, which escapes
+        // what follows it, and `\044`, which stands for a `$` that expands.
+        let apply_quoting = expand
+            && !matches!(
+                piece,
+                PromptPiece::Literal(_)
+                    | PromptPiece::EscapedSequence(_)
+                    | PromptPiece::Backslash
+                    | PromptPiece::AsciiCharacter(_)
+            );
 
         let formatted_piece = format_prompt_piece(shell, piece)?;
 
-        // Only useful when pass 2 actually consumes a `\` for that leading
-        // byte; otherwise the `\` would leak through.
-        if shell.options().expand_prompt_strings
-            && semantically_literal
-            && formatted_piece.starts_with(expansion::DOUBLE_QUOTED_ESCAPE_CHARS)
-        {
-            formatted_prompt.push('\\');
+        if apply_quoting {
+            formatted_prompt.push_str(
+                &brush_parser::word::DoubleQuotedTextKind::Prompt.quote(&formatted_piece),
+            );
+        } else {
+            formatted_prompt.push_str(&formatted_piece);
         }
-
-        formatted_prompt.push_str(&formatted_piece);
     }
 
-    if shell.options().expand_prompt_strings {
-        // Now expand any remaining escape sequences, but without tilde-expansion.
-        // Use double-quote escape rules so that backslashes emitted in the
-        // previous step survive intact unless they precede a character that
-        // would also be escapable inside a double-quoted string.
-        let options = expansion::ExpanderOptions {
-            tilde_expand: false,
-            unquoted_backslash_handling: expansion::UnquotedBackslashHandling::DoubleQuoted,
-            ..Default::default()
-        };
-        formatted_prompt =
-            expansion::basic_expand_word_with_options(shell, params, &formatted_prompt, &options)
-                .await?;
+    if expand {
+        match expansion::basic_expand_prompt_word(shell, params, &formatted_prompt).await {
+            Ok(expanded) => formatted_prompt = expanded,
+            // As in bash, a prompt that fails to expand (e.g., a bad substitution) is reported
+            // and shown as it was before this expansion. It's done here, not in the callers,
+            // because every prompt (PS0-PS2, PS4, `${x@P}`) wants it and only here is the
+            // unexpanded text at hand.
+            Err(err) => {
+                let _ = shell.display_error(&mut params.stderr(shell), &err);
+            }
+        }
     }
 
     Ok(formatted_prompt)
@@ -79,7 +82,7 @@ fn format_prompt_piece(
         brush_parser::prompt::PromptPiece::BellCharacter => "\x07".to_owned(),
         brush_parser::prompt::PromptPiece::CarriageReturn => "\r".to_owned(),
         brush_parser::prompt::PromptPiece::CurrentCommandNumber => {
-            return error::unimp("prompt: current command number");
+            shell.command_number().to_string()
         }
         brush_parser::prompt::PromptPiece::CurrentHistoryNumber => {
             return error::unimp("prompt: current history number");
@@ -90,7 +93,7 @@ fn format_prompt_piece(
             basename,
         } => format_current_working_directory(shell, tilde_replaced, basename),
         brush_parser::prompt::PromptPiece::Date(format) => {
-            format_date(&chrono::Local::now(), &format)
+            format_date(&crate::timing::to_local(jiff::Timestamp::now()), &format)
         }
         brush_parser::prompt::PromptPiece::DollarOrPound => {
             if users::is_root() {
@@ -158,7 +161,7 @@ fn format_prompt_piece(
                 .unwrap_or_default()
         }
         brush_parser::prompt::PromptPiece::Time(time_fmt) => {
-            format_time(&chrono::Local::now(), &time_fmt)
+            format_time(&crate::timing::to_local(jiff::Timestamp::now()), &time_fmt)
         }
     };
 
@@ -180,6 +183,7 @@ fn format_current_working_directory(
         working_dir_str = filename.to_string_lossy().to_string();
     }
 
+    // ast-grep-ignore: platform-cfg-outside-sys
     if cfg!(windows) {
         working_dir_str = working_dir_str.replace('\\', "/");
     }
@@ -187,39 +191,24 @@ fn format_current_working_directory(
     working_dir_str
 }
 
-fn format_time<Tz: chrono::TimeZone>(
-    datetime: &chrono::DateTime<Tz>,
-    format: &brush_parser::prompt::PromptTimeFormat,
-) -> String
-where
-    Tz::Offset: std::fmt::Display,
-{
-    let formatted = match format {
-        brush_parser::prompt::PromptTimeFormat::TwelveHourAM => datetime.format("%I:%M %p"),
-        brush_parser::prompt::PromptTimeFormat::TwelveHourHHMMSS => datetime.format("%I:%M:%S"),
-        brush_parser::prompt::PromptTimeFormat::TwentyFourHourHHMM => datetime.format("%H:%M"),
-        brush_parser::prompt::PromptTimeFormat::TwentyFourHourHHMMSS => datetime.format("%H:%M:%S"),
+fn format_time(datetime: &jiff::Zoned, format: &brush_parser::prompt::PromptTimeFormat) -> String {
+    let fmt = match format {
+        brush_parser::prompt::PromptTimeFormat::TwelveHourAM => "%I:%M %p",
+        brush_parser::prompt::PromptTimeFormat::TwelveHourHHMMSS => "%I:%M:%S",
+        brush_parser::prompt::PromptTimeFormat::TwentyFourHourHHMM => "%H:%M",
+        brush_parser::prompt::PromptTimeFormat::TwentyFourHourHHMMSS => "%H:%M:%S",
     };
 
-    formatted.to_string()
+    crate::timing::strftime(datetime, fmt)
 }
 
-fn format_date<Tz: chrono::TimeZone>(
-    datetime: &chrono::DateTime<Tz>,
-    format: &brush_parser::prompt::PromptDateFormat,
-) -> String
-where
-    Tz::Offset: std::fmt::Display,
-{
-    match format {
-        brush_parser::prompt::PromptDateFormat::WeekdayMonthDate => {
-            datetime.format("%a %b %d").to_string()
-        }
-        brush_parser::prompt::PromptDateFormat::Custom(fmt) => {
-            let fmt_items = chrono::format::StrftimeItems::new(fmt);
-            datetime.format_with_items(fmt_items).to_string()
-        }
-    }
+fn format_date(datetime: &jiff::Zoned, format: &brush_parser::prompt::PromptDateFormat) -> String {
+    let fmt = match format {
+        brush_parser::prompt::PromptDateFormat::WeekdayMonthDate => "%a %b %d",
+        brush_parser::prompt::PromptDateFormat::Custom(fmt) => fmt.as_str(),
+    };
+
+    crate::timing::strftime(datetime, fmt)
 }
 
 #[cfg(test)]
@@ -229,7 +218,9 @@ mod tests {
     #[test]
     fn test_format_time() {
         // Create a well-known test date/time.
-        let dt = chrono::DateTime::parse_from_rfc3339("2024-12-25T13:34:56.789Z").unwrap();
+        let dt = "2024-12-25T13:34:56.789Z[UTC]"
+            .parse::<jiff::Zoned>()
+            .unwrap();
 
         assert_eq!(
             format_time(&dt, &brush_parser::prompt::PromptTimeFormat::TwelveHourAM),
@@ -256,7 +247,9 @@ mod tests {
     #[test]
     fn test_format_date() {
         // Create a well-known test date/time.
-        let dt = chrono::DateTime::parse_from_rfc3339("2024-12-25T12:34:56.789Z").unwrap();
+        let dt = "2024-12-25T12:34:56.789Z[UTC]"
+            .parse::<jiff::Zoned>()
+            .unwrap();
 
         assert_eq!(
             format_date(
@@ -281,7 +274,7 @@ mod tests {
                     "%Y-%m-%d %H:%M:%S.%f"
                 ))
             ),
-            "2024-12-25 12:34:56.789000000"
+            "2024-12-25 12:34:56.789"
         );
     }
 }

@@ -1,7 +1,7 @@
 //! Standard builtins.
 
-// `brush_core::builtins::Command::execute` is async by contract: the trait declares a desugared
-// `-> impl Future<...> + Send` so that `brush_core::builtins::exec_builtin` can box and dispatch
+// `brush_core::builtins::Builtin::execute` is async by contract: the trait declares a desugared
+// `-> impl Future<...> + Send` so that a `brush_core::builtins::Registration` can box and dispatch
 // every builtin uniformly. Most builtins in this crate do purely synchronous work, so their
 // `execute` bodies contain no `.await` -- that is the trait contract being honored, not a defect.
 #![allow(
@@ -47,7 +47,7 @@ mod echo;
 mod enable;
 #[cfg(feature = "builtin.eval")]
 mod eval;
-#[cfg(all(feature = "builtin.exec", unix))]
+#[cfg(feature = "builtin.exec")]
 mod exec;
 #[cfg(feature = "builtin.exit")]
 mod exit;
@@ -77,7 +77,7 @@ mod let_;
 mod mapfile;
 #[cfg(feature = "builtin.popd")]
 mod popd;
-#[cfg(all(feature = "builtin.printf", any(unix, windows)))]
+#[cfg(all(feature = "builtin.printf", any(unix, windows, target_os = "wasi")))]
 mod printf;
 #[cfg(feature = "builtin.pushd")]
 mod pushd;
@@ -85,6 +85,9 @@ mod pushd;
 mod pwd;
 #[cfg(feature = "builtin.read")]
 mod read;
+
+#[cfg(all(test, any(feature = "builtin.read", feature = "builtin.mapfile")))]
+mod not_ready;
 #[cfg(feature = "builtin.return")]
 mod return_;
 #[cfg(feature = "builtin.set")]
@@ -125,58 +128,25 @@ mod unimp;
 pub use builder::ShellBuilderExt;
 pub use factory::{BuiltinSet, default_builtins};
 
-/// Writes an alias definition in the reusable form printed by `alias` and `command -v`.
+/// Writes an alias definition as `name='value'`.
+///
+/// With `prefix`, the line starts with `alias `, as `command -v` prints it. With
+/// `reusable`, it starts with `alias ` and a name that starts with `-` also gets
+/// `--`, as `alias` prints it so the output can be read back in.
 #[cfg(any(feature = "builtin.alias", feature = "builtin.command"))]
 fn write_alias_definition(
     mut writer: impl std::io::Write,
     name: &str,
     value: &str,
+    prefix: bool,
+    reusable: bool,
 ) -> std::io::Result<()> {
-    writeln!(
-        writer,
-        "alias {name}={}",
-        brush_core::escape::single_quote(value)
-    )
-}
+    if prefix || reusable {
+        write!(writer, "alias ")?;
+    }
+    if reusable && name.starts_with('-') {
+        write!(writer, "-- ")?;
+    }
 
-/// Macro to define a struct that represents a shell built-in flag argument that can be
-/// enabled or disabled by specifying an option with a leading '+' or '-' character.
-///
-/// # Arguments
-///
-/// - `$struct_name` - The identifier to be used for the struct to define.
-/// - `$flag_char` - The character to use as the flag.
-/// - `$desc` - The string description of the flag.
-#[macro_export]
-macro_rules! minus_or_plus_flag_arg {
-    ($struct_name:ident, $flag_char:literal, $desc:literal) => {
-        #[derive(clap::Parser)]
-        pub(crate) struct $struct_name {
-            #[arg(short = $flag_char, name = concat!(stringify!($struct_name), "_enable"), action = clap::ArgAction::SetTrue, help = $desc)]
-            _enable: bool,
-            #[arg(long = concat!("+", $flag_char), name = concat!(stringify!($struct_name), "_disable"), action = clap::ArgAction::SetTrue, hide = true)]
-            _disable: bool,
-        }
-
-        impl From<$struct_name> for Option<bool> {
-            fn from(value: $struct_name) -> Self {
-                value.to_bool()
-            }
-        }
-
-        impl $struct_name {
-            #[allow(dead_code, reason = "may not be used in all macro instantiations")]
-            pub const fn is_some(&self) -> bool {
-                self._enable || self._disable
-            }
-
-            pub const fn to_bool(&self) -> Option<bool> {
-                match (self._enable, self._disable) {
-                    (true, false) => Some(true),
-                    (false, true) => Some(false),
-                    _ => None,
-                }
-            }
-        }
-    };
+    writeln!(writer, "{name}={}", brush_core::escape::single_quote(value))
 }

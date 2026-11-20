@@ -2,7 +2,6 @@
 
 use std::collections::HashMap;
 use std::io::IsTerminal;
-use std::process::Stdio;
 use std::sync::Arc;
 
 use crate::ShellFd;
@@ -20,12 +19,12 @@ pub trait Stream: std::io::Read + std::io::Write + Send + Sync {
 
     /// Converts the stream into an `OwnedFd`. Returns an error if the operation
     /// is not supported or if it fails.
-    #[cfg(unix)]
+    #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
     fn try_clone_to_owned(&self) -> Result<std::os::fd::OwnedFd, error::Error>;
 
     /// Borrows the stream as a `BorrowedFd`. Returns an error if the operation
     /// is not supported or if it fails.
-    #[cfg(unix)]
+    #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
     fn try_borrow_as_fd(&self) -> Result<std::os::fd::BorrowedFd<'_>, error::Error>;
 }
 
@@ -37,8 +36,9 @@ pub trait Stream: std::io::Read + std::io::Write + Send + Sync {
 /// tasks against one process-wide descriptor table (rather than via `fork(2)` like a traditional
 /// shell); sharing the descriptor keeps deeply nested or highly concurrent execution from
 /// exhausting that table. A descriptor is duplicated for real only when an independently owned
-/// copy is needed to hand to an external child process — see [`OpenFile::try_clone_to_owned`] and
-/// the `Stdio` conversion below.
+/// copy is needed to hand to an external child process (see `OpenFile::try_clone_to_owned`, which
+/// the native launcher uses for a process's standard streams and other descriptors alike).
+#[non_exhaustive]
 pub enum OpenFile {
     /// The original standard input this process was started with.
     Stdin(std::io::Stdin),
@@ -135,7 +135,7 @@ impl std::fmt::Display for OpenFile {
 impl OpenFile {
     /// Converts the open file into an `OwnedFd`. For shared file/pipe handles this materializes
     /// a real duplicate via `dup(2)` so the caller receives an independently owned descriptor.
-    #[cfg(unix)]
+    #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
     pub(crate) fn try_clone_to_owned(self) -> Result<std::os::fd::OwnedFd, error::Error> {
         use std::os::fd::AsFd as _;
 
@@ -155,7 +155,7 @@ impl OpenFile {
     /// # Errors
     ///
     /// Returns an error if the operation is not supported for the underlying file type.
-    #[cfg(unix)]
+    #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
     pub fn try_borrow_as_fd(&self) -> Result<std::os::fd::BorrowedFd<'_>, error::Error> {
         use std::os::fd::AsFd as _;
 
@@ -226,25 +226,6 @@ impl From<std::io::PipeReader> for OpenFile {
 impl From<std::io::PipeWriter> for OpenFile {
     fn from(writer: std::io::PipeWriter) -> Self {
         Self::PipeWriter(Arc::new(writer))
-    }
-}
-
-impl TryFrom<OpenFile> for Stdio {
-    type Error = error::Error;
-
-    fn try_from(open_file: OpenFile) -> Result<Self, Self::Error> {
-        // File and pipe handles are shared behind an `Arc`, so the descriptor cannot be moved
-        // out; duplicate it to give the child an independently owned descriptor. Duplication can
-        // fail (e.g. under descriptor exhaustion), so the conversion is fallible and the error is
-        // surfaced to the caller rather than silently degrading the child's streams.
-        match open_file {
-            OpenFile::Stdin(_) | OpenFile::Stdout(_) | OpenFile::Stderr(_) => Ok(Self::inherit()),
-            OpenFile::File(f) => Ok(f.try_clone()?.into()),
-            OpenFile::PipeReader(r) => Ok(r.try_clone()?.into()),
-            OpenFile::PipeWriter(w) => Ok(w.try_clone()?.into()),
-            // Custom streams have no descriptor to hand to a child process.
-            OpenFile::Stream(_) => Ok(Self::null()),
-        }
     }
 }
 

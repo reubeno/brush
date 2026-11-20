@@ -99,6 +99,15 @@ cases:
       echo hi > >(wc -l)
       echo hi >> >(wc -l)
 
+  - name: "Process substitution: wait for an output consumer"
+    known_failure: true # TODO(redirection): wait doesn't wait for a process substitution, so the shell exits before the consumer prints anything
+    min_oracle_version: "5.0" # bash 4.4 and earlier don't wait for process substitutions either
+    stdin: |
+      shopt -u -o posix
+      echo hi > >(sleep 0.5; while read -r l; do echo "out:$l"; done)
+      wait
+      echo "after wait"
+
   - name: "Process substitution: input"
     stdin: |
       shopt -u -o posix
@@ -162,6 +171,14 @@ cases:
     stdin: |
       ( : $(echo hi >&3); ) 3>output.txt
 
+  - name: "Expansions in a command don't see its redirections"
+    known_failure: true # TODO(expansion): redirections are set up as they're reached, so they apply to command substitutions in later words and in all assignments
+    stdin: |
+      f() { echo </dev/null "[$(cat)]"; }
+      echo stdin-data | f
+      g() { x="[$(cat)]" </dev/null; echo "$x"; }
+      echo stdin-data | g
+
   - name: "Redirection failure"
     ignore_stderr: true
     stdin: |
@@ -182,6 +199,48 @@ cases:
     stdin: |
       non-existent-command 2>&-
       echo "This should appear"
+
+  - name: "Close stdout of external command"
+    ignore_stderr: true
+    stdin: |
+      env echo "This should not appear" 1>&-
+      echo "This should appear"
+
+  - name: "Close standard streams of external commands: exit status"
+    known_failure: true # TODO(redirection): a closed standard stream is opened on the null device, not closed
+    ignore_stderr: true
+    # sh, not a coreutils program run by env: uutils' programs, being Rust ones, reopen a closed
+    # standard stream on the null device as they start.
+    stdin: |
+      sh -c 'exec 3>&1' 1>&-
+      echo "stdout: $?"
+      sh -c 'exec 3<&0' <&-
+      echo "stdin: $?"
+
+  - name: "Redirect for an external command with one file descriptor to spare"
+    known_failure: true # TODO(redirection): the shell duplicates a redirected file to hand it to the process, which fails with no descriptor left (bash doesn't need one)
+    ignore_stderr: true
+    stdin: |
+      ulimit -n 64
+      # Open files until none are left, then free one, so that opening the
+      # redirection's target succeeds, but nothing past that can be opened.
+      fd=10
+      while [[ $fd -lt 64 ]] && eval "exec $fd</dev/null" 2>/dev/null; do fd=$((fd+1)); done
+      eval "exec $((fd-1))<&-"
+      env true 3</dev/null
+      echo "status: $?"
+
+  - name: "Redirect external command output between stdout and stderr"
+    stdin: |
+      env echo "to stderr" >&2
+      env sh -c 'echo "to stdout" >&2' 2>&1
+
+  - name: "Redirect external command output to the shell's stdin"
+    known_failure_platforms: ["windows"] # TODO(redirection): on Windows, the shell's stdin as an external command's output stream is replaced by the shell's stdout
+    ignore_stderr: true
+    stdin: |
+      env echo "to stdin" >&0
+      echo "status: $?"
 
   - name: "Close output file descriptor"
     ignore_stderr: true

@@ -360,3 +360,160 @@ cases:
       (( ref += 5 ))
       echo "after +=5: $counter"
       echo "expr: $(( ref * 2 ))"
+
+  - name: "Legacy arithmetic expansion with array subscripts"
+    stdin: |
+      a=(5 6)
+      echo $[ a[1] + 1 ] $[a[a[0]-4]*2] $[ a[1]*a[0] ]
+
+  - name: "Unmatched bracket in arithmetic expansion does not execute commands"
+    ignore_stderr: true # arithmetic error wording differs
+    stdin: |
+      echo $((echo unexpected [))
+      echo "not reached"
+
+  - name: "Legacy arithmetic expansion containing nested expansions"
+    stdin: |
+      a=(5 6)
+      echo $[ ${a[1]} + 1 ] $[ ${#a[@]} ] $[ $[1] + 1 ] $[ a[$[1]] ]
+
+  - name: "Blanks inside array subscripts in arithmetic"
+    known_failure: true # TODO(arithmetic): the arithmetic parser rejects blanks inside a subscript's brackets
+    stdin: |
+      a=(1 2)
+      echo $(( a[ 1 ] )) $(( a[ a[0] ] ))
+
+  - name: "Double quotes inside legacy arithmetic expansion in double quotes"
+    known_failure: true # TODO(tokenizer): in double quotes, bash doesn't nest quotes inside '$[...]', so the '$[' is left unclosed (a bad substitution); brush expands it
+    ignore_stderr: true # error wording differs
+    stdin: |
+      echo "[$[ "1" + 2 ]]"
+      echo "rc=$?"
+
+  - name: "Shift after nested parentheses in arithmetic command"
+    stdin: |
+      (( y = (1 + (2)) << 2 )); echo "$y"
+      (( y = ((1)) << 2 )); echo "$y"
+      x=$( (( ((1)) << 2 )); echo ok ); echo "$x"
+      (( ((1)) << 2 )); cat <<EOF
+      body
+      EOF
+
+  - name: "Nested subshell starting with double parentheses"
+    ignore_stderr: true
+    stdin: |
+      ((echo a) )
+      echo "rc=$?"
+
+  #
+  # A failed arithmetic evaluation is a command that returns non-zero, not a fatal error: a shell
+  # reports it and carries on with the rest of the list. brush abandons the remaining commands in
+  # the list, so the status line never prints. Each of these passes when the commands are written
+  # on separate lines; only sequencing within one list diverges.
+  #
+  - name: "Division by zero yields a non-zero status without aborting the list"
+    known_failure: true # TODO: arithmetic errors should not abandon the rest of a command list
+    stdin: |
+      (( 1 / 0 )); echo "status: $?"
+
+  - name: "Arithmetic assignment to a readonly variable does not abort the list"
+    known_failure: true # TODO: arithmetic errors should not abandon the rest of a command list
+    stdin: |
+      a=(one); readonly a; (( a[0] = 9 )); echo "status: $?"
+
+  - name: "Arithmetic error on its own line leaves the following command reachable"
+    ignore_stderr: true
+    stdin: |
+      (( 1 / 0 ))
+      echo "status: $?"
+
+  - name: "Arithmetic command with line continuations between opening parentheses"
+    stdin: |
+      (\
+      (\
+      10+3)) && echo "arithmetic"
+
+  - name: "An empty arithmetic expression evaluates to 0"
+    stdin: |
+      echo "[$(( ))]"
+      x=" "
+      echo "[$(( x ))]"
+      echo "[$(( $x ))]"
+
+  #
+  # An expression that is empty or holds nothing but whitespace evaluates to 0, whichever entry
+  # point reaches the arithmetic parser: an expansion, a `((...))` command, `let`, or an array
+  # subscript.
+  #
+  - name: "A whitespace-only arithmetic expression evaluates to 0"
+    stdin: |
+      echo "[$((  ))]"
+      echo "[$(( 	))]"
+      s="   "
+      echo "[$(( s ))]"
+      echo "[$(( s + 1 ))]"
+
+  - name: "let with an empty or blank expression fails without a diagnostic"
+    stdin: |
+      let ""
+      echo "empty: $?"
+      let " "
+      echo "blank: $?"
+      let "" 1
+      echo "trailing: $?"
+
+  - name: "(( )) with a blank expression is false"
+    stdin: |
+      (( ))
+      echo "empty: $?"
+      ((   ))
+      echo "blank: $?"
+
+  - name: "A blank array subscript is element 0"
+    stdin: |
+      zz_b=(x y z)
+      unset 'zz_b[ ]'
+      declare -p zz_b
+      zz_c=(p q)
+      echo "[${zz_c[ ]}]"
+
+  - name: "Assignment to something that is not a variable"
+    ignore_stderr: true
+    stdin: |
+      x=5
+      let -x=1; echo "let -x=1: $? x=$x"
+      let '!x=2'; echo "let !x=2: $? x=$x"
+      let '1 + x = 3'; echo "let 1 + x = 3: $? x=$x"
+      let '0 ? 1 : x = 4'; echo "let 0 ? 1 : x = 4: $? x=$x"
+      (( (x) = 6 ))
+      echo "(x) = 6: $? x=$x"
+
+  - name: "Assignments nested in other expressions"
+    stdin: |
+      x=5
+      echo "$(( -(x = 1) )) x=$x"
+      echo "$(( x = y = 2 )) x=$x y=$y"
+      echo "$(( x += y *= 3 )) x=$x y=$y"
+      echo "$(( 1 ? x = 7 : 8 )) x=$x"
+      echo "$(( x == 7 ? 1 : 0 ))"
+      echo "$(( a[x = 1] = 9 )) x=$x a[1]=${a[1]}"
+      echo "$(( x = 1, y = x + 1 )) x=$x y=$y"
+
+  - name: "Braces are not expanded in an arithmetic expression"
+    ignore_stderr: true # error wording differs
+    stdin: |
+      (( x = {1..1} ))
+      echo "[$x]"
+      let 'y={1..1}' || echo "no"
+      echo "[$y]"
+      arr=(a b c)
+      echo "[${arr[{1..1}]}]"
+      echo "[$(( {1..3} ))]"
+      echo end
+
+  - name: "The list goes on after an arithmetic command fails to parse"
+    known_failure: true # TODO(arithmetic): brush abandons the rest of the list
+    ignore_stderr: true # error wording differs
+    stdin: |
+      (( 1 + )) || echo "or-ran"
+      let "1 +"; echo "rc=$?"

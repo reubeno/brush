@@ -1,0 +1,412 @@
+name: "Scripting basics"
+# These cases use only builtins, so they also run under WASI
+# (`cargo xtask test integration --wasi`).
+cases:
+  - name: "Arithmetic"
+    stdin: |
+      echo $(( (7 + 3) * 2 ** 3 % 7 )) $(( 17 / 5 )) $(( -17 % 5 )) $(( 1 << 10 )) $(( 0x1f )) $(( 8#17 ))
+      let x=5*5
+      echo "$x"
+      (( y = 10, y += 5 ))
+      echo "$y"
+      (( 0 ))
+      echo "status: $?"
+    expected_exit_code: 0
+    expected_stdout: |
+      3 3 -2 1024 31 15
+      25
+      15
+      status: 1
+    expected_stderr: ""
+
+  - name: "Indexed arrays"
+    stdin: |
+      a=(zero one two)
+      a+=(three)
+      echo "${#a[@]} ${a[2]} ${a[-1]} ${!a[*]}"
+      unset 'a[1]'
+      echo "${a[*]} / ${!a[*]}"
+      b=("${a[@]:1:2}")
+      echo "${b[*]}"
+    expected_exit_code: 0
+    expected_stdout: |
+      4 two three 0 1 2 3
+      zero two three / 0 2 3
+      two three
+    expected_stderr: ""
+
+  - name: "Associative arrays"
+    stdin: |
+      declare -A m=([b]=2 [a]=1)
+      m[c]=3
+      for k in a b c; do echo -n "$k=${m[$k]} "; done
+      echo
+      echo "${#m[@]}"
+      [[ -n ${m[a]+set} ]] && echo "has a"
+      unset 'm[a]'
+      [[ -z ${m[a]+set} ]] && echo "no a"
+    expected_exit_code: 0
+    expected_stdout: "a=1 b=2 c=3 \n3\nhas a\nno a\n"
+    expected_stderr: ""
+
+  - name: "Parameter expansion"
+    stdin: |
+      s="Hello, World"
+      echo "${s,,} ${s^^} ${#s}"
+      echo "${s:7} ${s:0:5} ${s: -3}"
+      echo "${s/World/There} ${s//l/L}"
+      echo "${s#*, } ${s%,*} ${s##*o} ${s%%o*}"
+      unset u
+      echo "${u:-default} ${u:=assigned} $u ${u:+alt}"
+    expected_exit_code: 0
+    expected_stdout: |
+      hello, world HELLO, WORLD 12
+      World Hello rld
+      Hello, There HeLLo, WorLd
+      World Hello rld Hell
+      default assigned assigned alt
+    expected_stderr: ""
+
+  - name: "Functions, locals, and dynamic scope"
+    stdin: |
+      g() { echo "g sees $v"; }
+      f() { local v=inner; g; return 3; }
+      v=global
+      f
+      echo "status: $? after: $v"
+    expected_exit_code: 0
+    expected_stdout: |
+      g sees inner
+      status: 3 after: global
+    expected_stderr: ""
+
+  - name: "case statements"
+    stdin: |
+      for w in apple Banana cherry 42 ""; do
+        case $w in
+          a*) echo "$w: starts with a" ;;
+          [Bb]anana) echo "$w: banana" ;;
+          *rr*) echo "$w: double r" ;&
+          [0-9]*) echo "$w: falls through or digits" ;;
+          "") echo "empty" ;;
+        esac
+      done
+    expected_exit_code: 0
+    expected_stdout: |
+      apple: starts with a
+      Banana: banana
+      cherry: double r
+      cherry: falls through or digits
+      42: falls through or digits
+      empty
+    expected_stderr: ""
+
+  - name: "Loops with break and continue"
+    stdin: |
+      for ((i = 0; i < 10; i++)); do
+        (( i % 2 )) && continue
+        (( i > 6 )) && break
+        echo -n "$i "
+      done
+      echo
+      n=3
+      until (( n == 0 )); do echo -n "$n "; n=$((n - 1)); done
+      echo
+      for x in a b; do for y in 1 2; do [[ $y == 2 ]] && continue 2; echo "$x$y"; done; done
+    expected_exit_code: 0
+    expected_stdout: "0 2 4 6 \n3 2 1 \na1\nb1\n"
+    expected_stderr: ""
+
+  - name: "Extended tests"
+    stdin: |
+      [[ abc == a* ]] && echo glob
+      [[ x123 =~ ^x([0-9]+)$ ]] && echo "${BASH_REMATCH[1]}"
+      [[ -z "" && -n x ]] && echo "empty and nonempty"
+      [[ 10 -gt 9 && b > a ]] && echo compare
+    expected_exit_code: 0
+    expected_stdout: |
+      glob
+      123
+      empty and nonempty
+      compare
+    expected_stderr: ""
+
+  - name: "-ef tells files apart"
+    known_failure_platforms: ["wasi", "windows"] # TODO(test): -ef has no device and inode to compare on Windows, and on wasm every file has the same ones
+    test_files:
+      - path: "a.txt"
+        contents: |
+          a
+      - path: "b.txt"
+        contents: |
+          b
+    stdin: |
+      [[ a.txt -ef b.txt ]] && echo "a.txt is b.txt" || echo "a.txt isn't b.txt"
+      [[ a.txt -ef ./a.txt ]] && echo "a.txt is ./a.txt" || echo "a.txt isn't ./a.txt"
+    expected_exit_code: 0
+    expected_stdout: |
+      a.txt isn't b.txt
+      a.txt is ./a.txt
+    expected_stderr: ""
+
+  - name: "test and ["
+    test_files:
+      - path: "exists.txt"
+        contents: |
+          x
+    stdin: |
+      [ 3 -lt 5 ] && echo lt
+      test -n "x" && echo nonempty
+      [ -f exists.txt ] && echo file
+      [ -e missing.txt ] || echo missing
+      [ "a" = "b" ]
+      echo "status: $?"
+    expected_exit_code: 0
+    expected_stdout: |
+      lt
+      nonempty
+      file
+      missing
+      status: 1
+    expected_stderr: ""
+
+  - name: "getopts"
+    stdin: |
+      parse() {
+        local OPTIND opt
+        while getopts "ab:" opt; do
+          case $opt in
+            a) echo "flag a" ;;
+            b) echo "b=$OPTARG" ;;
+          esac
+        done
+        shift $((OPTIND - 1))
+        echo "rest: $*"
+      }
+      parse -a -b val one two
+    expected_exit_code: 0
+    expected_stdout: |
+      flag a
+      b=val
+      rest: one two
+    expected_stderr: ""
+
+  - name: "printf"
+    stdin: |
+      type -t printf
+      printf '%s=%d|%5.2f|%x\n' answer 42 3.14159 255
+      printf -v greeting 'hi, %s' world
+      echo "$greeting"
+      set_in_caller() { printf -v "$1" %s "$2"; }
+      f() { local out; set_in_caller out 'from callee'; echo "$out"; }
+      f
+      declare -a arr=()
+      printf -v 'arr[1]' %s second
+      echo "${arr[1]}"
+    expected_exit_code: 0
+    expected_stdout: |
+      builtin
+      answer=42| 3.14|ff
+      hi, world
+      from callee
+      second
+    expected_stderr: ""
+
+  - name: "set -e stops at the first failure"
+    stdin: |
+      set -e
+      echo before
+      false
+      echo unreachable
+    expected_exit_code: 1
+    expected_stdout: |
+      before
+    expected_stderr: ""
+
+  - name: "EXIT trap"
+    stdin: |
+      trap 'echo bye' EXIT
+      echo hi
+    expected_exit_code: 0
+    expected_stdout: |
+      hi
+      bye
+    expected_stderr: ""
+
+  - name: "eval and indirect expansion"
+    stdin: |
+      name=target
+      target=value
+      echo "${!name}"
+      eval "dyn_$name=42"
+      echo "$dyn_target"
+    expected_exit_code: 0
+    expected_stdout: |
+      value
+      42
+    expected_stderr: ""
+
+  - name: "Brace expansion"
+    stdin: |
+      echo {a,b}{1,2} {1..5} {10..0..5} {a..e}
+    expected_exit_code: 0
+    expected_stdout: |
+      a1 a2 b1 b2 1 2 3 4 5 10 5 0 a b c d e
+    expected_stderr: ""
+
+  - name: "Globbing"
+    test_files:
+      - path: "a.txt"
+        contents: ""
+      - path: "b.txt"
+        contents: ""
+      - path: "c.log"
+        contents: ""
+    stdin: |
+      echo *.txt
+      for f in *.log; do echo "log: $f"; done
+      echo none: *.xyz
+      shopt -s nullglob
+      echo none: *.xyz
+    expected_exit_code: 0
+    expected_stdout: |
+      a.txt b.txt
+      log: c.log
+      none: *.xyz
+      none:
+    expected_stderr: ""
+
+  - name: "Quoting"
+    stdin: |
+      x=val
+      echo 'single $x' "double $x $((1 + 1))" $'ansi\ttab' "esc \"q\" \$x"
+    expected_exit_code: 0
+    expected_stdout: "single $x double val 2 ansi\ttab esc \"q\" $x\n"
+    expected_stderr: ""
+
+  - name: "Subshells isolate state"
+    stdin: |
+      x=1
+      (x=2; echo "inner $x")
+      echo "outer $x"
+    expected_exit_code: 0
+    expected_stdout: |
+      inner 2
+      outer 1
+    expected_stderr: ""
+
+  - name: "Aliases"
+    stdin: |
+      shopt -s expand_aliases
+      alias greet='echo hello'
+      greet world
+    expected_exit_code: 0
+    expected_stdout: |
+      hello world
+    expected_stderr: ""
+
+  - name: "Positional parameters and shift"
+    stdin: |
+      set -- a b c d
+      shift 2
+      echo "$# $1 $*"
+      f() { echo "$#: $1 | $2"; }
+      f "x y" z
+    expected_exit_code: 0
+    expected_stdout: |
+      2 c c d
+      2: x y | z
+    expected_stderr: ""
+
+  - name: "read options"
+    stdin: |
+      read -r -a arr <<< "p q r"
+      echo "${arr[1]}"
+      IFS=, read -r a b <<< "1,2"
+      echo "$a+$b"
+      read -r -n 3 c <<< "abcdef"
+      echo "$c"
+      read -r -d ';' d <<< "x;y"
+      echo "$d"
+    expected_exit_code: 0
+    expected_stdout: |
+      q
+      1+2
+      abc
+      x
+    expected_stderr: ""
+
+  - name: "mapfile options"
+    stdin: |
+      mapfile -t -s 1 -n 2 arr <<< $'h\na\nb\nc'
+      echo "${arr[*]}"
+    expected_exit_code: 0
+    expected_stdout: |
+      a b
+    expected_stderr: ""
+
+  - name: "type and command -v"
+    stdin: |
+      f() { :; }
+      type -t echo
+      type -t if
+      type -t f
+      command -v echo
+    expected_exit_code: 0
+    expected_stdout: |
+      builtin
+      keyword
+      function
+      echo
+    expected_stderr: ""
+
+  - name: "type and command -v of a missing command"
+    stdin: |
+      type -t no-such-command; echo "type: $?"
+      command -v no-such-command; echo "command -v: $?"
+      [ -x /no/such/file ]; echo "test -x: $?"
+    expected_exit_code: 0
+    expected_stdout: |
+      type: 1
+      command -v: 1
+      test -x: 1
+    expected_stderr: ""
+
+  - name: "test -r and -w of a missing file"
+    stdin: |
+      [ -r /no/such/file ]; echo "test -r: $?"
+      [ -w /no/such/file ]; echo "test -w: $?"
+    expected_exit_code: 0
+    expected_stdout: |
+      test -r: 1
+      test -w: 1
+    expected_stderr: ""
+
+  - name: "$$ expands to the shell's process ID"
+    known_failure_platforms: ["wasi"] # TODO(wasm): wasm has no process IDs, and expanding $$ panics
+    stdin: |
+      echo "pid set: ${$:+yes}"
+      x=$$
+      echo "numeric: $(( x > 0 ))"
+    expected_exit_code: 0
+    expected_stdout: |
+      pid set: yes
+      numeric: 1
+
+  - name: "An unknown command exits with 127"
+    stdin: |
+      no_such_command_xyz 2> err.txt
+      echo "status: $?"
+    expected_exit_code: 0
+    expected_stdout: |
+      status: 127
+
+  - name: "Self-referencing variable in arithmetic"
+    known_failure_platforms: ["wasi", "windows"] # TODO(arithmetic): the recursion overflows the stack (wasm's, or the main thread's on Windows) before brush's depth limit stops it
+    stdin: |
+      a=a
+      echo "$(( a ))"
+      echo "exit: $?"
+    expected_exit_code: 0
+    expected_stdout: |
+      exit: 1

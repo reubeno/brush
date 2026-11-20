@@ -58,3 +58,148 @@ cases:
     stdin: |
       printf '%s\n' {0..10000} | x=1
       echo "Last: $?, PIPESTATUS: ${PIPESTATUS[*]}"
+
+  - name: "Function stage writing more than a pipe buffer before the next stage is spawned"
+    # Regression test: a shell function used as a non-last pipeline stage
+    # must run concurrently with the rest of the pipeline, not be awaited
+    # to completion before the next stage is even spawned. Otherwise, once
+    # the function writes more to its stdout pipe than the OS pipe buffer
+    # holds (commonly 64KiB on Linux) before returning, the write blocks
+    # forever because nothing is reading the other end yet.
+    stdin: |
+      big() {
+        local i
+        for i in $(seq 1 5000); do
+          echo "padding line number ${i} to exceed the pipe buffer size"
+        done
+      }
+      big | wc -l
+      echo "Last: $?, PIPESTATUS: ${PIPESTATUS[*]}"
+
+  - name: "Builtin that fails in a pipeline stage"
+    stdin: |
+      cd /nonexistent 2>/dev/null | true
+      echo "status: $?"
+      cd /nonexistent 2>&1 | { read -r line; echo "got an error message: ${line:+yes}"; }
+
+  - name: "Exit in a pipeline's last stage"
+    stdin: |
+      echo hi | exit 3
+      echo "status: $?"
+
+  - name: "Break and return in a pipeline's last stage"
+    stdin: |
+      for i in 1 2; do
+        echo "$i" | break
+        echo "i=$i"
+      done
+
+      f() {
+        echo hi | return 5
+        echo "after return"
+      }
+      f
+      echo "f: $?"
+
+  - name: "Compound command writing more than a pipe holds"
+    timeout_in_seconds: 3
+    stdin: |
+      # Each first stage writes 256 KiB, more than a pipe holds, before the next stage reads any.
+      s=x; for ((i = 0; i < 10; i++)); do s=$s$s; done
+      for ((i = 0; i < 256; i++)); do echo "$s"; done | wc -l
+      f() { for ((i = 0; i < 256; i++)); do echo "$s"; done; }
+      f | wc -l
+      { f; echo last; } | tail -n 1
+
+  - name: "Endless producer into head"
+    known_failure: true # TODO(pipeline): the producer runs to completion before head starts, so it never stops
+    timeout_in_seconds: 3
+    stdin: |
+      while true; do echo y; done | head -n 1
+
+  - name: "Compound writer exceeds pipe capacity"
+    stdin: |
+      i=0
+      while [ $i -lt 4096 ]; do printf '%s\n' 0123456789012345678901234567890; i=$((i+1)); done | wc -l
+
+  - name: "Control flow in a pipeline stage stays in its subshell"
+    stdin: |
+      echo x | exit 3
+      echo "after exit: $?"
+      echo x | exec cat
+      echo "after exec: $?"
+      echo x | { exit 6; }
+      echo "after group: $?"
+      f() { true | return 4; echo "f still running: $?"; }
+      f
+      for i in 1 2; do echo x | break; echo "loop body $i"; done
+
+  - name: "A special builtin's fatal error in a pipeline stage ends only that stage"
+    known_failure: true # TODO(builtins): a usage error only skips exit, which returns 2 rather than exiting with 1 (see builtins/exit.yaml)
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      true | export -Z
+      echo "after usage error: $?"
+      true | exit 1 2
+      echo "after exit: $?"
+
+  - name: "An expansion error in a pipeline stage ends only that stage"
+    ignore_stderr: true
+    stdin: |
+      echo ${x?boom} | cat
+      echo "after \${x?}: ${PIPESTATUS[*]}"
+      f() { echo ${y?b}; }
+      f | cat
+      echo "after f: ${PIPESTATUS[*]}"
+      { echo ${y?b}; echo same-stage; } | cat
+      echo "after group: ${PIPESTATUS[*]}"
+      echo hi | { read v; echo ${y?b}; }
+      echo "last stage: ${PIPESTATUS[*]}"
+      set -u
+      echo $zz | cat
+      echo "after set -u: ${PIPESTATUS[*]}"
+
+  - name: "An expansion error in a pipeline stage's prefix assignment ends only that stage"
+    ignore_stderr: true
+    stdin: |
+      true | X=${x?b} true
+      echo "last: ${PIPESTATUS[*]}"
+      X=${x?b} true | cat
+      echo "first: ${PIPESTATUS[*]}"
+      true | X=${x?b}
+      echo "assignment only: ${PIPESTATUS[*]}"
+      f() { :; }
+      true | X=${x?b} f
+      echo "function: ${PIPESTATUS[*]}"
+
+  - name: "An error turned into a result in a pipeline stage ends only that stage"
+    ignore_stderr: true
+    stdin: |
+      true | eval 'echo ${x?boom}'
+      echo "eval: ${PIPESTATUS[*]}"
+      f() { X=${x?boom} true; }
+      true | f
+      echo "function: ${PIPESTATUS[*]}"
+      true | { X=${x?boom} true; }
+      echo "group: ${PIPESTATUS[*]}"
+      true | eval 'exit 8'
+      echo "eval exit: ${PIPESTATUS[*]}"
+
+  - name: "Control flow in the last stage applies with lastpipe"
+    stdin: |
+      shopt -s lastpipe
+      f() { echo x | return 4; echo "f still running"; }
+      f
+      echo "f returned $?"
+      echo x | exit 5
+      echo "not reached"
+
+  # The subshell prints the report itself, so the report goes to the subshell's stderr.
+  - name: "time reports a subshell's timing on the subshell's stderr"
+    known_failure: true # TODO(pipeline): time reports on the shell's stderr, ignoring the subshell's redirection
+    stdin: |
+      time (exit 3) 2>/dev/null
+      echo "status: $?"
+      time (exec 2>/dev/null; true)
+      echo "status: $?"

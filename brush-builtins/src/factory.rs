@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use super::*;
 
 #[allow(unused_imports, reason = "not all builtins are used in all configs")]
-use brush_core::builtins::{self, builtin, decl_builtin, raw_arg_builtin, simple_builtin};
+use brush_core::builtins;
 
 /// Identifies well-known sets of builtins.
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -36,60 +36,78 @@ pub fn default_builtins<SE: brush_core::ShellExtensions>(
     #[cfg(feature = "builtin.break")]
     m.insert(
         "break".into(),
-        builtin::<break_::BreakCommand, SE>().special(),
+        builtins::Registration::of::<break_::BreakCommand>().special(),
     );
     #[cfg(feature = "builtin.colon")]
     m.insert(
         ":".into(),
-        simple_builtin::<colon::ColonCommand, SE>().special(),
+        builtins::Registration::of::<colon::ColonCommand>().special(),
     );
     #[cfg(feature = "builtin.continue")]
     m.insert(
         "continue".into(),
-        builtin::<continue_::ContinueCommand, SE>().special(),
+        builtins::Registration::of::<continue_::ContinueCommand>().special(),
     );
     #[cfg(feature = "builtin.dot")]
-    m.insert(".".into(), builtin::<dot::DotCommand, SE>().special());
+    m.insert(
+        ".".into(),
+        builtins::Registration::of::<dot::DotCommand>().special(),
+    );
     #[cfg(feature = "builtin.eval")]
-    m.insert("eval".into(), builtin::<eval::EvalCommand, SE>().special());
-    #[cfg(all(feature = "builtin.exec", unix))]
-    m.insert("exec".into(), builtin::<exec::ExecCommand, SE>().special());
+    m.insert(
+        "eval".into(),
+        builtins::Registration::of::<eval::EvalCommand>().special(),
+    );
+    #[cfg(feature = "builtin.exec")]
+    m.insert(
+        "exec".into(),
+        builtins::Registration::of::<exec::ExecCommand>().special(),
+    );
     #[cfg(feature = "builtin.exit")]
-    m.insert("exit".into(), builtin::<exit::ExitCommand, SE>().special());
+    m.insert(
+        "exit".into(),
+        builtins::Registration::of::<exit::ExitCommand>().special(),
+    );
     #[cfg(feature = "builtin.export")]
     m.insert(
         "export".into(),
-        decl_builtin::<export::ExportCommand, SE>().special(),
+        builtins::Registration::of::<export::ExportCommand>().special(),
     );
     #[cfg(feature = "builtin.return")]
     m.insert(
         "return".into(),
-        builtin::<return_::ReturnCommand, SE>().special(),
+        builtins::Registration::of::<return_::ReturnCommand>().special(),
     );
     #[cfg(feature = "builtin.set")]
-    m.insert("set".into(), builtin::<set::SetCommand, SE>().special());
+    m.insert(
+        "set".into(),
+        builtins::Registration::of::<set::SetCommand>().special(),
+    );
     #[cfg(feature = "builtin.shift")]
     m.insert(
         "shift".into(),
-        builtin::<shift::ShiftCommand, SE>().special(),
+        builtins::Registration::of::<shift::ShiftCommand>().special(),
     );
     #[cfg(feature = "builtin.trap")]
-    m.insert("trap".into(), builtin::<trap::TrapCommand, SE>().special());
+    m.insert(
+        "trap".into(),
+        builtins::Registration::of::<trap::TrapCommand>().special(),
+    );
     #[cfg(feature = "builtin.unset")]
     m.insert(
         "unset".into(),
-        builtin::<unset::UnsetCommand, SE>().special(),
+        builtins::Registration::of::<unset::UnsetCommand>().special(),
     );
 
     #[cfg(feature = "builtin.declare")]
     m.insert(
         "readonly".into(),
-        decl_builtin::<declare::DeclareCommand, SE>().special(),
+        builtins::Registration::of::<declare::DeclareCommand>().special(),
     );
     #[cfg(feature = "builtin.times")]
     m.insert(
         "times".into(),
-        builtin::<times::TimesCommand, SE>().special(),
+        builtins::Registration::of::<times::TimesCommand>().special(),
     );
 
     //
@@ -97,131 +115,236 @@ pub fn default_builtins<SE: brush_core::ShellExtensions>(
     //
 
     #[cfg(feature = "builtin.alias")]
-    m.insert("alias".into(), builtin::<alias::AliasCommand, SE>()); // TODO(alias): should be exec_declaration_builtin
+    m.insert(
+        "alias".into(),
+        builtins::Registration::of::<alias::AliasCommand>(),
+    ); // TODO(alias): should be exec_declaration_builtin
     #[cfg(feature = "builtin.bg")]
-    m.insert("bg".into(), builtin::<bg::BgCommand, SE>());
+    m.insert("bg".into(), builtins::Registration::of::<bg::BgCommand>());
     #[cfg(feature = "builtin.cd")]
-    m.insert("cd".into(), builtin::<cd::CdCommand, SE>());
+    m.insert("cd".into(), builtins::Registration::of::<cd::CdCommand>());
     #[cfg(feature = "builtin.command")]
-    m.insert("command".into(), builtin::<command::CommandCommand, SE>());
+    m.insert(
+        "command".into(),
+        builtins::Registration::of::<command::CommandCommand>(),
+    );
     #[cfg(feature = "builtin.false")]
-    m.insert("false".into(), simple_builtin::<false_::FalseCommand, SE>());
+    m.insert(
+        "false".into(),
+        builtins::Registration::of::<false_::FalseCommand>(),
+    );
     #[cfg(feature = "builtin.fg")]
-    m.insert("fg".into(), builtin::<fg::FgCommand, SE>());
+    m.insert("fg".into(), builtins::Registration::of::<fg::FgCommand>());
     #[cfg(feature = "builtin.getopts")]
-    m.insert("getopts".into(), builtin::<getopts::GetOptsCommand, SE>());
+    m.insert(
+        "getopts".into(),
+        builtins::Registration::of::<getopts::GetOptsCommand>(),
+    );
     #[cfg(feature = "builtin.hash")]
-    m.insert("hash".into(), builtin::<hash::HashCommand, SE>());
+    m.insert(
+        "hash".into(),
+        builtins::Registration::of::<hash::HashCommand>(),
+    );
     #[cfg(feature = "builtin.help")]
-    m.insert("help".into(), builtin::<help::HelpCommand, SE>());
+    m.insert(
+        "help".into(),
+        builtins::Registration::of::<help::HelpCommand>(),
+    );
     #[cfg(feature = "builtin.jobs")]
-    m.insert("jobs".into(), builtin::<jobs::JobsCommand, SE>());
+    m.insert(
+        "jobs".into(),
+        builtins::Registration::of::<jobs::JobsCommand>(),
+    );
     #[cfg(all(feature = "builtin.kill", unix))]
-    m.insert("kill".into(), builtin::<kill::KillCommand, SE>());
+    m.insert(
+        "kill".into(),
+        builtins::Registration::of::<kill::KillCommand>(),
+    );
     #[cfg(feature = "builtin.declare")]
     m.insert(
         "local".into(),
-        decl_builtin::<declare::DeclareCommand, SE>(),
+        builtins::Registration::of::<declare::DeclareCommand>(),
     );
     #[cfg(feature = "builtin.pwd")]
-    m.insert("pwd".into(), builtin::<pwd::PwdCommand, SE>());
+    m.insert(
+        "pwd".into(),
+        builtins::Registration::of::<pwd::PwdCommand>(),
+    );
     #[cfg(feature = "builtin.read")]
-    m.insert("read".into(), builtin::<read::ReadCommand, SE>());
+    m.insert(
+        "read".into(),
+        builtins::Registration::of::<read::ReadCommand>(),
+    );
     #[cfg(feature = "builtin.true")]
-    m.insert("true".into(), simple_builtin::<true_::TrueCommand, SE>());
+    m.insert(
+        "true".into(),
+        builtins::Registration::of::<true_::TrueCommand>(),
+    );
     #[cfg(feature = "builtin.type")]
-    m.insert("type".into(), builtin::<type_::TypeCommand, SE>());
+    m.insert(
+        "type".into(),
+        builtins::Registration::of::<type_::TypeCommand>(),
+    );
     #[cfg(all(feature = "builtin.ulimit", unix))]
-    m.insert("ulimit".into(), builtin::<ulimit::ULimitCommand, SE>());
+    m.insert(
+        "ulimit".into(),
+        builtins::Registration::of::<ulimit::ULimitCommand>(),
+    );
     #[cfg(all(feature = "builtin.umask", unix))]
-    m.insert("umask".into(), builtin::<umask::UmaskCommand, SE>());
+    m.insert(
+        "umask".into(),
+        builtins::Registration::of::<umask::UmaskCommand>(),
+    );
     #[cfg(feature = "builtin.unalias")]
-    m.insert("unalias".into(), builtin::<unalias::UnaliasCommand, SE>());
+    m.insert(
+        "unalias".into(),
+        builtins::Registration::of::<unalias::UnaliasCommand>(),
+    );
     #[cfg(feature = "builtin.wait")]
-    m.insert("wait".into(), builtin::<wait::WaitCommand, SE>());
+    m.insert(
+        "wait".into(),
+        builtins::Registration::of::<wait::WaitCommand>(),
+    );
 
     #[cfg(feature = "builtin.fc")]
-    m.insert("fc".into(), builtin::<fc::FcCommand, SE>());
+    m.insert("fc".into(), builtins::Registration::of::<fc::FcCommand>());
 
     if matches!(set, BuiltinSet::BashMode) {
         #[cfg(feature = "builtin.builtin")]
         m.insert(
             "builtin".into(),
-            raw_arg_builtin::<builtin_::BuiltinCommand, SE>(),
+            builtins::Registration::of::<builtin_::BuiltinCommand>(),
         );
         #[cfg(feature = "builtin.declare")]
         m.insert(
             "declare".into(),
-            decl_builtin::<declare::DeclareCommand, SE>(),
+            builtins::Registration::of::<declare::DeclareCommand>(),
         );
         #[cfg(feature = "builtin.echo")]
-        m.insert("echo".into(), builtin::<echo::EchoCommand, SE>());
+        m.insert(
+            "echo".into(),
+            builtins::Registration::of::<echo::EchoCommand>(),
+        );
         #[cfg(feature = "builtin.enable")]
-        m.insert("enable".into(), builtin::<enable::EnableCommand, SE>());
+        m.insert(
+            "enable".into(),
+            builtins::Registration::of::<enable::EnableCommand>(),
+        );
         #[cfg(feature = "builtin.let")]
-        m.insert("let".into(), builtin::<let_::LetCommand, SE>());
+        m.insert(
+            "let".into(),
+            builtins::Registration::of::<let_::LetCommand>(),
+        );
         #[cfg(feature = "builtin.mapfile")]
-        m.insert("mapfile".into(), builtin::<mapfile::MapFileCommand, SE>());
+        m.insert(
+            "mapfile".into(),
+            builtins::Registration::of::<mapfile::MapFileCommand>(),
+        );
         #[cfg(feature = "builtin.mapfile")]
-        m.insert("readarray".into(), builtin::<mapfile::MapFileCommand, SE>());
-        #[cfg(all(feature = "builtin.printf", any(unix, windows)))]
-        m.insert("printf".into(), builtin::<printf::PrintfCommand, SE>());
+        m.insert(
+            "readarray".into(),
+            builtins::Registration::of::<mapfile::MapFileCommand>(),
+        );
+        #[cfg(all(feature = "builtin.printf", any(unix, windows, target_os = "wasi")))]
+        m.insert(
+            "printf".into(),
+            builtins::Registration::of::<printf::PrintfCommand>(),
+        );
         #[cfg(feature = "builtin.shopt")]
-        m.insert("shopt".into(), builtin::<shopt::ShoptCommand, SE>());
+        m.insert(
+            "shopt".into(),
+            builtins::Registration::of::<shopt::ShoptCommand>(),
+        );
         #[cfg(feature = "builtin.dot")]
-        m.insert("source".into(), builtin::<dot::DotCommand, SE>().special());
+        m.insert(
+            "source".into(),
+            builtins::Registration::of::<dot::DotCommand>().special(),
+        );
         #[cfg(all(feature = "builtin.suspend", unix))]
-        m.insert("suspend".into(), builtin::<suspend::SuspendCommand, SE>());
+        m.insert(
+            "suspend".into(),
+            builtins::Registration::of::<suspend::SuspendCommand>(),
+        );
         #[cfg(feature = "builtin.test")]
-        m.insert("test".into(), builtin::<test::TestCommand, SE>());
+        m.insert(
+            "test".into(),
+            builtins::Registration::of::<test::TestCommand>(),
+        );
         #[cfg(feature = "builtin.test")]
-        m.insert("[".into(), builtin::<test::TestCommand, SE>());
+        m.insert(
+            "[".into(),
+            builtins::Registration::of::<test::TestCommand>(),
+        );
         #[cfg(feature = "builtin.declare")]
         m.insert(
             "typeset".into(),
-            decl_builtin::<declare::DeclareCommand, SE>(),
+            builtins::Registration::of::<declare::DeclareCommand>(),
         );
 
         // Completion builtins
         #[cfg(feature = "builtin.complete")]
         m.insert(
             "complete".into(),
-            builtin::<complete::CompleteCommand, SE>(),
+            builtins::Registration::of::<complete::CompleteCommand>(),
         );
         #[cfg(feature = "builtin.compgen")]
-        m.insert("compgen".into(), builtin::<complete::CompGenCommand, SE>());
+        m.insert(
+            "compgen".into(),
+            builtins::Registration::of::<complete::CompGenCommand>(),
+        );
         #[cfg(feature = "builtin.compopt")]
-        m.insert("compopt".into(), builtin::<complete::CompOptCommand, SE>());
+        m.insert(
+            "compopt".into(),
+            builtins::Registration::of::<complete::CompOptCommand>(),
+        );
 
         // Dir stack builtins
         #[cfg(feature = "builtin.dirs")]
-        m.insert("dirs".into(), builtin::<dirs::DirsCommand, SE>());
+        m.insert(
+            "dirs".into(),
+            builtins::Registration::of::<dirs::DirsCommand>(),
+        );
         #[cfg(feature = "builtin.popd")]
-        m.insert("popd".into(), builtin::<popd::PopdCommand, SE>());
+        m.insert(
+            "popd".into(),
+            builtins::Registration::of::<popd::PopdCommand>(),
+        );
         #[cfg(feature = "builtin.pushd")]
-        m.insert("pushd".into(), builtin::<pushd::PushdCommand, SE>());
+        m.insert(
+            "pushd".into(),
+            builtins::Registration::of::<pushd::PushdCommand>(),
+        );
 
         // Input configuration builtins
         #[cfg(feature = "builtin.bind")]
-        m.insert("bind".into(), builtin::<bind::BindCommand, SE>());
+        m.insert(
+            "bind".into(),
+            builtins::Registration::of::<bind::BindCommand>(),
+        );
 
         // History
         #[cfg(feature = "builtin.history")]
-        m.insert("history".into(), builtin::<history::HistoryCommand, SE>());
+        m.insert(
+            "history".into(),
+            builtins::Registration::of::<history::HistoryCommand>(),
+        );
 
         #[cfg(feature = "builtin.caller")]
-        m.insert("caller".into(), builtin::<caller::CallerCommand, SE>());
+        m.insert(
+            "caller".into(),
+            builtins::Registration::of::<caller::CallerCommand>(),
+        );
 
         // TODO(disown): implement disown builtin
         m.insert(
             "disown".into(),
-            builtin::<unimp::UnimplementedCommand, SE>(),
+            builtins::Registration::of::<unimp::UnimplementedCommand>(),
         );
 
         // TODO(logout): implement logout builtin
         m.insert(
             "logout".into(),
-            builtin::<unimp::UnimplementedCommand, SE>(),
+            builtins::Registration::of::<unimp::UnimplementedCommand>(),
         );
     }
 

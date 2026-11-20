@@ -1,24 +1,31 @@
 use brush_core::{ExecutionResult, builtins};
-use clap::Parser;
 use std::{borrow::Cow, io::Write, path::Path};
 
 /// Display the current working directory.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct PwdCommand {
+    /// Print $PWD if it names the current working directory.
+    #[arg(short = 'L', overrides = "-P")]
+    allow_symlinks: bool,
+
     /// Print the physical directory without any symlinks.
-    #[arg(short = 'P', overrides_with = "allow_symlinks")]
+    #[arg(short = 'P', overrides = "-L")]
     physical: bool,
 
-    /// Print $PWD if it names the current working directory.
-    #[arg(short = 'L', overrides_with = "physical")]
-    allow_symlinks: bool,
+    /// Operands, which are ignored. Options before the first operand are
+    /// still misuse; everything after it is an operand.
+    #[arg(positional, stop_flags, hide)]
+    _operands: Vec<String>,
 }
 
-impl builtins::Command for PwdCommand {
+brush_winnow_args_adapter::impl_parse_args!(PwdCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for PwdCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut cwd: Cow<'_, Path> = context.shell.working_dir().into();

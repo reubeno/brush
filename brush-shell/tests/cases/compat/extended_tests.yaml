@@ -234,6 +234,61 @@ cases:
       [[ a =~ ^(a|b)$ ]] && echo "4. Pass"
       [[ a =~ c ]]       && echo "5. Pass"
 
+  # A ']' in the first member position (after any '^') is a member of the bracket
+  # expression, not its terminator.
+  - name: "Regex with leading ] in bracket expression"
+    stdin: |
+      [[ "]" =~ ^[]]$   ]] && echo "1. Matched"
+      [[ "a" =~ ^[]a]$  ]] && echo "2. Matched"
+      [[ "[" =~ ^[][]$  ]] && echo "3. Matched"
+      [[ "]" =~ ^[][]$  ]] && echo "4. Matched"
+      [[ "a" =~ ^[][]$  ]] || echo "5. Not matched"
+      [[ "[" =~ ^[^][]$ ]] || echo "6. Not matched"
+      [[ "a" =~ ^[^][]$ ]] && echo "7. Matched"
+      [[ "[" =~ ^[]a[]$ ]] && echo "8. Matched"
+      # Only the first '^' negates; the second is an ordinary member, so the ']'
+      # that follows it does terminate the expression.
+      [[ "xa" =~ ^[^^][ab]$ ]] && echo "9. Matched"
+      [[ "x[" =~ ^[^^][ab]$ ]] || echo "10. Not matched"
+      [[ "x]" =~ ^[^^]]$    ]] && echo "11. Matched"
+      # That leading ']' can also be the low end of a range.
+      [[ "^" =~ ^[]-a]$ ]] && echo "12. Matched"
+      [[ "]" =~ ^[]-a]$ ]] && echo "13. Matched"
+      [[ "-" =~ ^[]-a]$ ]] || echo "14. Not matched"
+      [[ "b" =~ ^[]-a]$ ]] || echo "15. Not matched"
+      echo "done"
+
+  # `fancy_regex` and POSIX ERE disagree on how a '-' range endpoint binds, and
+  # brush passes the user's bracket expression through without normalizing it.
+  - name: "Regex with '-' as a range endpoint"
+    known_failure: true
+    stdin: |
+      for s in '+' ',' '-' '.' '/' 'a'; do
+        [[ "$s" =~ ^[+--]$ ]] && echo "1. matched: $s"
+      done
+      for s in '+' ',' '-' '.' '/' 'a'; do
+        [[ "$s" =~ ^[--/]$ ]] && echo "2. matched: $s"
+      done
+      echo "done"
+
+  # A reversed range is rejected by both shells, but bash reports a bad regex as
+  # a usage error (status 2) while brush treats it as a failed match (status 1).
+  - name: "Regex with a reversed range"
+    known_failure: true
+    ignore_stderr: true
+    stdin: |
+      [[ x =~ ^[9-0]$ ]]
+      echo "status=$?"
+
+  # POSIX ERE reads '?*' as two stacked quantifiers; `fancy_regex` rejects the
+  # second as having no valid target.
+  - name: "Regex with stacked quantifiers"
+    known_failure: true
+    ignore_stderr: true
+    stdin: |
+      [[ "]" =~ ^[a]?*]$ ]]
+      echo "status=$?"
+
   - name: "Regex with case insensitivity"
     stdin: |
       shopt -u nocasematch
@@ -330,6 +385,19 @@ cases:
       [[ -v set_with_value ]] && echo "2. Set with value"
 
       [[ -v not_set ]] || echo "3. Not set"
+
+  - name: "Variable set checks on array elements"
+    known_failure: true # TODO(extended-tests): -v with a subscript always reports an array element as unset
+    stdin: |
+      indexed=(x y)
+      [[ -v indexed[1] ]] && echo "1. Indexed element set"
+      [[ -v indexed[5] ]] || echo "2. Indexed element unset"
+
+      declare -A assoc=([key]=value)
+      [[ -v assoc[key] ]] && echo "3. Associative element set"
+      [[ -v assoc[nope] ]] || echo "4. Associative element unset"
+
+      test -v 'indexed[0]' && echo "5. test -v sees the element"
 
   - name: "Variables in extended tests"
     stdin: |
@@ -558,3 +626,80 @@ cases:
       t=$' \t\nabc \t\n'
       re=$'[ \t\n]+$'
       [[ $t =~ $re ]] && printf '[%s]\n' "${t::${#t}-${#BASH_REMATCH}}"
+
+  # An unquoted unary operator at the start of a test is read as the operator and
+  # takes the next word as its operand, even a word that looks like an operator.
+  - name: "Unary operator takes an operator-like word as operand"
+    stdin: |
+      [[ -z == ]]; echo "1: $?"
+      [[ -n == ]]; echo "2: $?"
+      [[ -z -z ]]; echo "3: $?"
+      [[ -n -eq ]]; echo "4: $?"
+      [[ -z =~ ]]; echo "5: $?"
+      [[ -z ! ]]; echo "6: $?"
+      [[ -f -nt ]]; echo "7: $?"
+      [[ ! -z == ]]; echo "8: $?"
+      [[ ( -z != ) ]]; echo "9: $?"
+      [[ -n x && -z != ]]; echo "10: $?"
+      [[ -z == || -n = ]]; echo "11: $?"
+
+  - name: "Quoted or expanded unary operator is a plain word"
+    stdin: |
+      [[ "-z" == x ]]; echo "1: $?"
+      [[ '-z' == -z ]]; echo "2: $?"
+      [[ \-z == -z ]]; echo "3: $?"
+      x=-z
+      [[ $x == -z ]]; echo "4: $?"
+      [[ $x ]]; echo "5: $?"
+      [[ x == -z ]]; echo "6: $?"
+      [[ -zz == x ]]; echo "7: $?"
+
+  - name: "Error: word after unary operand of [[ ]]"
+    ignore_stderr: true
+    stdin: |
+      [[ -z == x ]] && echo should-not-print
+
+  - name: "Error: unary operator as left side of binary test"
+    ignore_stderr: true
+    stdin: |
+      [[ -f -nt x ]] && echo should-not-print
+
+  - name: "Error: unary operator as left side of arithmetic test"
+    ignore_stderr: true
+    stdin: |
+      [[ -n -eq 1 ]] && echo should-not-print
+
+  - name: "Error: unary operator as left side of < test"
+    ignore_stderr: true
+    stdin: |
+      [[ -z < x ]] && echo should-not-print
+
+  - name: "Error: unary operator as left side of =~ test"
+    ignore_stderr: true
+    stdin: |
+      [[ -z =~ x ]] && echo should-not-print
+
+  - name: "Error: unary operator followed by ||"
+    ignore_stderr: true
+    stdin: |
+      [[ -n || x ]] && echo should-not-print
+
+  - name: "Error: unary operator followed by ]]"
+    ignore_stderr: true
+    stdin: |
+      [[ -z ]] && echo should-not-print
+
+  - name: "Error: unary operator followed by ) in [[ ]]"
+    ignore_stderr: true
+    stdin: |
+      [[ ( -z ) ]] && echo should-not-print
+
+  - name: "Error: negated unary operator followed by ]]"
+    ignore_stderr: true
+    stdin: |
+      [[ ! -n ]] && echo should-not-print
+
+  - name: "Error: ]] as unary operand"
+    ignore_stderr: true
+    stdin: |
+      [[ -z ]] ]] && echo should-not-print

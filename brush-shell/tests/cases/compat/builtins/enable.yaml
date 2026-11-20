@@ -30,3 +30,25 @@ cases:
       # Re-check
       type printf
       printf "Back\n"
+
+  - name: "enable -p lists only enabled builtins"
+    stdin: |
+      enable -n echo
+      enable -p | grep -c echo
+      enable -n -p | grep echo
+
+  - name: "enable lists only enabled builtins, -a lists all of them"
+    stdin: |
+      enable -n echo
+      enable | grep -w echo; echo "default: $?"
+      enable -s | grep -w -e echo -e set
+      enable -a | grep -w -e echo -e printf
+      enable -n -a | grep -w -e echo -e printf
+      enable -n | grep -w -e echo -e printf
+
+  - name: "enable takes --"
+    stdin: |
+      enable -n -- echo; echo "a=$?"
+      type -t echo
+      enable -- echo; echo "b=$?"
+      type -t echo

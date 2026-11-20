@@ -1,15 +1,15 @@
-pub use crate::sys::stubs::async_pipe;
-pub use crate::sys::stubs::commands;
-pub(crate) use crate::sys::stubs::env;
+pub mod async_pipe;
+pub(crate) mod env;
 pub use crate::sys::stubs::fd;
 pub(crate) mod fs;
 pub use crate::sys::stubs::input;
 pub(crate) use crate::sys::stubs::network;
-pub(crate) use crate::sys::stubs::pipes;
+pub(crate) mod pipes;
 pub use crate::sys::stubs::poll;
-pub use crate::sys::stubs::process;
+pub mod process;
 pub use crate::sys::stubs::resource;
 pub use crate::sys::stubs::signal;
+pub(crate) mod tasks;
 pub use crate::sys::stubs::terminal;
 pub(crate) use crate::sys::stubs::users;
 

@@ -1,10 +1,10 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins, error};
 
 /// Wait for jobs to terminate.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct WaitCommand {
     /// Wait for specified job to terminate (instead of change status).
     #[arg(short = 'f')]
@@ -20,14 +20,17 @@ pub(crate) struct WaitCommand {
     variable_to_receive_id: Option<String>,
 
     /// Process IDs or job specs to wait for.
+    #[arg(positional)]
     ids: Vec<String>,
 }
 
-impl builtins::Command for WaitCommand {
+brush_winnow_args_adapter::impl_parse_args!(WaitCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for WaitCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         if self.wait_for_terminate {
@@ -47,7 +50,9 @@ impl builtins::Command for WaitCommand {
                 if id.starts_with('%') {
                     // It's a job spec.
                     if let Some(job) = context.shell.jobs_mut().resolve_job_spec(id) {
-                        job.wait().await?;
+                        // Take the job's status, but not its control flow: an `exit` in a
+                        // background job ends only that job.
+                        result = job.wait().await?.exit_code.into();
                     } else {
                         writeln!(
                             context.stderr(),

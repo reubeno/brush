@@ -40,6 +40,10 @@ impl Config {
     ///
     /// * `settings` - The high-level terminal settings to apply to this configuration.
     pub fn update(&mut self, settings: &terminal::Settings) {
+        if settings.raw_input {
+            nix::sys::termios::cfmakeraw(&mut self.termios);
+        }
+
         if let Some(echo_input) = &settings.echo_input {
             if *echo_input {
                 self.termios.local_flags |= nix::sys::termios::LocalFlags::ECHO;
@@ -116,4 +120,16 @@ pub fn move_self_to_foreground() -> Result<(), std::io::Error> {
 /// Returns `None` if there is no terminal attached or the lookup failed.
 pub fn try_get_terminal_device_path() -> Option<PathBuf> {
     nix::unistd::ttyname(std::io::stdin()).ok()
+}
+
+/// Returns the width, in columns, of the terminal associated with the given file.
+/// Returns `None` if it isn't a terminal or doesn't report a width.
+///
+/// # Arguments
+///
+/// * `file` - A reference to the open terminal.
+pub fn get_columns(file: &openfiles::OpenFile) -> Option<usize> {
+    let fd = file.try_borrow_as_fd().ok()?;
+    let (terminal_size::Width(columns), _) = terminal_size::terminal_size_of(fd)?;
+    Some(usize::from(columns))
 }

@@ -1,43 +1,45 @@
-use clap::Parser;
-
 use brush_core::{ExecutionResult, builtins};
 
-/// Directly invokes a built-in, without going through typical search order.
-#[derive(Default, Parser)]
+/// Execute SHELL-BUILTIN with arguments ARGs without performing command lookup.
+#[derive(Default, winnow_args::Args)]
+#[arg(
+    usage = "builtin [shell-builtin [arg ...]]",
+    disable_help_short,
+    disable_version_flag,
+    disable_help_subcommand
+)]
 pub(crate) struct BuiltinCommand {
-    #[clap(skip)]
+    // The builtin to run and its arguments, as they arrived. Skipped by winnow-args,
+    // and filled in by `impl_parse_args!`.
+    #[arg(skip)]
     args: Vec<brush_core::CommandArg>,
 }
 
-impl builtins::DeclarationCommand for BuiltinCommand {
-    fn set_declarations(&mut self, args: Vec<brush_core::CommandArg>) {
-        self.args = args;
-    }
-}
+brush_winnow_args_adapter::impl_parse_args!(BuiltinCommand, declarations = args);
 
-impl builtins::Command for BuiltinCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for BuiltinCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        if self.args.is_empty() {
-            return Ok(ExecutionResult::success());
-        }
-
-        let args: Vec<_> = self.args.iter().skip(1).cloned().collect();
+        let args = self.args;
         if args.is_empty() {
             return Ok(ExecutionResult::success());
         }
 
         let builtin_name = args[0].to_string();
 
-        if let Some(builtin) = context.shell.builtins().get(&builtin_name)
-            && !builtin.disabled
+        if let Some(builtin) = context
+            .shell
+            .builtins()
+            .get(&builtin_name)
+            .filter(|builtin| builtin.is_enabled())
+            .cloned()
         {
             context.command_name = builtin_name;
-            (builtin.execute_func)(context, args).await
+            builtin.execute(context, args).await
         } else {
             Err(brush_core::ErrorKind::BuiltinNotFound(builtin_name).into())
         }

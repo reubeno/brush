@@ -266,6 +266,31 @@ cases:
       value_guard=2
       echo "after readonly assignment"
 
+  - name: "A special builtin named by an expansion keeps its redirection error fatal in POSIX mode"
+    known_failure: true # TODO(posix): a special builtin's failed redirection doesn't end the shell when an expansion names the command
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      cmd=:
+      $cmd > /nonexistent-dir/file
+      echo "not reached"
+
+  - name: "local of a readonly variable fails"
+    known_failure: true # TODO(local): local shadows a readonly variable rather than failing with status 1
+    ignore_stderr: true
+    stdin: |
+      readonly r=1
+      f() { local r=2; echo "in f: $r"; }
+      f
+      echo "f: $?"
+
+  - name: "A special builtin's misuse in the EXIT trap sets the shell's status in POSIX mode"
+    known_failure: true # TODO(posix): the EXIT trap's misuse leaves the shell's status as it was
+    ignore_stderr: true
+    stdin: |
+      (set -o posix; trap "set -o bogus" EXIT; echo "in subshell")
+      echo "after subshell: $?"
+
   - name: "Variable assignment error (interactive)"
     args: ["-i"]
     ignore_stderr: true
@@ -375,6 +400,24 @@ cases:
       . ./non-existent-file
       echo "after builtin call (status $?)"
 
+  - name: "A special builtin's misuse doesn't end a POSIX shell when its status is tested, and an assignment error does"
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      (set -o bogus || echo "ran ||"; echo "survived set -o bogus ||")
+      (if shift x; then :; fi; echo "survived if shift x")
+      (readonly r=1; readonly r=2 || echo "ran ||"; echo "survived readonly r=2 ||")
+      (. /nonexistent-file || echo "ran ||"; echo "survived . ||")
+
+  - name: "Prefix assignment to a readonly variable (POSIX mode, non-interactive)"
+    known_failure: true # in POSIX mode, bash doesn't run the command; brush does
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      readonly R=1
+      R=2 printf 'ran\n'
+      echo "after"
+
   - name: "errexit with failing command (non-interactive)"
     stdin: |
       set -e
@@ -397,3 +440,304 @@ cases:
       echo "before false"
       false
       echo "after false"
+
+  # Only the presence of escape sequences is compared, not the (differing) wording. The harness
+  # passes --disable-color by default, which would hide the behavior under test.
+  - name: "Error messages are uncolored when stderr is not a terminal"
+    known_failure: true # brush colors its error messages unless given --disable-color
+    removed_default_args: ["--disable-color"]
+    stdin: |
+      out=$(missing_command 2>&1)
+      [[ $out == *$'\e'* ]] && echo "command not found: colored" || echo "command not found: plain"
+      out=$(cd /no/such/dir 2>&1)
+      [[ $out == *$'\e'* ]] && echo "builtin error: colored" || echo "builtin error: plain"
+
+  - name: "Expansion error in a redirected group"
+    known_failure: true # TODO(errors): the error leaves the group before it's shown, so it's shown on the shell's stderr despite the group's redirect, and the shell exits with status 1 rather than 127
+    stdin: |
+      unset zz
+      { echo "${zz?unset}"; } 2>/dev/null
+      echo "not reached"
+
+  - name: "Builtin diagnostics carry the script location"
+    known_failure: true # TODO(errors): brush prints no "file: line N:" location
+    stdin: |
+      export 1x=2
+
+  - name: "Builtin usage errors are reported without an error prefix"
+    known_failure: true # TODO(errors): brush's error formatter prints "error: " and no location
+    stdin: |
+      { export -Z; } 2>&1 | head -n 1
+
+  - name: "Builtin I/O errors are reported as bash reports them"
+    known_failure: true # TODO(errors): brush reports "i/o error: ... (os error 2)"
+    stdin: |
+      cd /nonexistent-dir
+
+  # The leading "file: line N:" a shell prefixes is stripped.
+  - name: "Parameter expansion errors name the parameter"
+    known_failure: true # TODO(errors): brush reports "expansion error: <message>" or "expanding unset variable: ${name}"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      unset y zz arr
+      (echo ${y:?}) 2>&1 | strip
+      (echo ${y?}) 2>&1 | strip
+      (echo ${y:?custom message}) 2>&1 | strip
+      (set -u; echo $zz) 2>&1 | strip
+      (set -u; echo ${arr[1]}) 2>&1 | strip
+
+  - name: "Arithmetic errors name the expression and the token at fault"
+    known_failure: true # TODO(errors): brush reports "arithmetic evaluation error: <message>" without the expression
+    min_oracle_version: "5.3" # bash 5.2 says "syntax error", not "arithmetic syntax error"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      (echo $((1/0))) 2>&1 | strip
+      (echo $((5%0))) 2>&1 | strip
+      (echo $((1+))) 2>&1 | strip
+      ((1/0)) 2>&1 | strip
+
+  - name: "Special builtin runtime error is fatal in POSIX mode"
+    min_oracle_version: "5.3" # bash 5.2 reports the error and goes on
+    known_failure: true # TODO(posix): this special builtin error doesn't end a non-interactive POSIX shell
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      export 1x=2
+      echo "after export: $?"
+
+  - name: "Unsetting a readonly variable is fatal in POSIX mode"
+    min_oracle_version: "5.3" # bash 5.2 reports the error and goes on
+    ignore_stderr: true
+    stdin: |
+      (set -o posix; readonly rx=1; unset rx; echo "after unset: $?"); echo "unset: $?"
+      readonly ry=1
+      unset ry
+      echo "outside POSIX mode: $?"
+
+  - name: "unset -v's invalid name is fatal in POSIX mode, and plain unset's isn't"
+    known_failure: true # TODO(unset): an invalid name is accepted silently, so it can't end the shell
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      (unset -v 1x; echo "survived: $?"); echo "unset -v 1x: $?"
+      (unset -v 'a[1'; echo "survived: $?"); echo "unset -v 'a[1': $?"
+      (unset 1x; echo "survived: $?"); echo "unset 1x: $?"
+      (unset -f 1x; echo "survived: $?"); echo "unset -f 1x: $?"
+
+  - name: "Builtin errors in a pipeline are reported on the command's stderr"
+    stdin: |
+      strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
+      shopt -s -u extglob 2>&1 | strip
+      echo "shopt: ${PIPESTATUS[*]}"
+      export -Z 2>/dev/null | cat
+      echo "export: ${PIPESTATUS[*]}"
+      cd /nonexistent-dir 2>/dev/null | cat
+      echo "cd: ${PIPESTATUS[*]}"
+      true | cd /nonexistent-dir 2>/dev/null
+      echo "last stage: ${PIPESTATUS[*]}"
+
+  - name: "A special builtin's usage and assignment errors are fatal in POSIX mode"
+    known_failure: true # TODO(posix): a special builtin's usage and assignment errors don't end a non-interactive POSIX shell
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      (set -o bogus; echo "survived: $?")
+      echo "status $?: set -o bogus"
+      (set --bogus; echo "survived: $?")
+      echo "status $?: set --bogus"
+      (trap -Z; echo "survived: $?")
+      echo "status $?: trap -Z"
+      (shift abc; echo "survived: $?")
+      echo "status $?: shift abc"
+      (readonly 1x; echo "survived: $?")
+      echo "status $?: readonly 1x"
+      (export 1x=2 y=3; echo "survived: $?")
+      echo "status $?: export 1x=2 y=3"
+      (readonly r=1; readonly r=2; echo "survived: $?")
+      echo "status $?: readonly r=1; readonly r=2"
+      (readonly r=1; unset r; echo "survived: $?")
+      echo "status $?: readonly r=1; unset r"
+      (readonly r=1; export r=2; echo "survived: $?")
+      echo "status $?: readonly r=1; export r=2"
+      (. /nonexistent-file; echo "survived: $?")
+      echo "status $?: . /nonexistent-file"
+      (f() { return abc; }; f; echo "survived: $?")
+      echo "status $?: f() { return abc; }; f"
+      (return 3; echo "survived: $?")
+      echo "status $?: return 3"
+      (exec -Z; echo "survived: $?")
+      echo "status $?: exec -Z"
+      (export --help >/dev/null; echo "survived: $?")
+      echo "status $?: export --help >/dev/null"
+      (for i in 1; do break abc; done; echo "survived: $?")
+      echo "status $?: for i in 1; do break abc; done"
+
+  - name: "A special builtin's ordinary failures are not fatal in POSIX mode"
+    known_failure: true # TODO(posix): any error a special builtin returns ends a non-interactive POSIX shell
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      for cmd in 'trap x BOGUS' 'set -- a; shift 3' 'export -f nofunc' 'unset -f -v x' \
+          'unset 1x' 'for i in 1; do break 0; done' 'break' 'continue 2'; do
+        (eval "$cmd"; echo "survived $?: $cmd")
+      done
+
+  - name: "A failed exec ends a non-interactive shell unless execfail is set"
+    known_failure: true # TODO(exec): a failed exec doesn't end a non-interactive shell
+    ignore_stderr: true
+    stdin: |
+      (exec /nonexistent-command; echo "survived")
+      echo "missing: $?"
+      (exec /etc/passwd; echo "survived")
+      echo "not executable: $?"
+      (shopt -s execfail; exec /nonexistent-command; echo "survived execfail: $?")
+
+  - name: "A special builtin's redirection error is fatal in POSIX mode"
+    known_failure: true # TODO(posix): the shell reports a redirection error before it knows the command
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      exec 3</nonexistent-file
+      echo "survived: $?"
+
+  - name: "Builtins attribute their diagnostics as bash does"
+    known_failure: true # TODO(errors): some builtins print diagnostics without bash's attribution or wording
+    stdin: |
+      strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
+      enable nosuch 2>&1 | strip
+      (unset HOME; cd) 2>&1 | strip
+      [ 1 = 1 2>&1 | strip
+      help nosuchtopic 2>&1 | strip
+      kill -s BOGUS $$ 2>&1 | strip
+      type nosuch 2>&1 | strip
+      unalias nosuch 2>&1 | strip
+
+  - name: "An assignment error drops the rest of the line"
+    known_failure: true # TODO(errors): runs the rest of the line
+    ignore_stderr: true
+    stdin: |
+      readonly r=1
+      r=2; echo "same line: $?"
+      echo "next line: $?"
+      f() { r=3; }; f; echo "same line after f: $?"
+      echo "next line after f: $?"
+
+  # An error that bash abandons the current line for stays that way when the command it happens
+  # in is a compound command with redirections: the redirections only decide where the message
+  # goes (the cases above and below check that), not what the error does to the enclosing list.
+  - name: "An error in a redirected group drops the rest of the line"
+    ignore_stderr: true
+    stdin: |
+      readonly r=1
+      { r=2; } 2>/dev/null; echo "same line after assignment: $?"
+      echo "next line: $?"
+      { echo $((1/0)); } 2>/dev/null; echo "same line after arithmetic: $?"
+      echo "next line: $?"
+      shopt -s failglob
+      { echo /no-such-dir-*; } 2>/dev/null; echo "same line after failglob: $?"
+      echo "next line: $?"
+
+  - name: "An error in a redirected compound command drops the rest of the line"
+    ignore_stderr: true
+    stdin: |
+      readonly r=1
+      if true; then r=2; fi 2>/dev/null; echo "same line after if: $?"
+      echo "next line: $?"
+      for i in 1; do r=2; done 2>/dev/null; echo "same line after for: $?"
+      echo "next line: $?"
+      while true; do r=2; done 2>/dev/null; echo "same line after while: $?"
+      echo "next line: $?"
+
+  - name: "An error in a redirected group isn't a failure for ||"
+    ignore_stderr: true
+    stdin: |
+      readonly r=1
+      { r=2; } 2>/dev/null || echo "ran ||"; echo "same line"
+      echo "next line"
+
+  - name: "An error in a redirected group isn't a false condition"
+    ignore_stderr: true
+    stdin: |
+      readonly r=1
+      if { r=2; } 2>/dev/null; then echo "then"; else echo "else"; fi; echo "same line after if"
+      echo "next line"
+      ! { r=2; } 2>/dev/null && echo "negated"; echo "same line after !"
+      echo "next line"
+
+  - name: "An error in a redirected group abandons the enclosing loop"
+    ignore_stderr: true
+    stdin: |
+      readonly r=1
+      for i in 1 2 3; do { r=2; } 2>/dev/null; echo "iteration $i"; done
+      echo "after for"
+      i=0
+      until { r=2; } 2>/dev/null; do i=$((i + 1)); [ $i -ge 3 ] && break; echo "tick $i"; done
+      echo "after until"
+      i=0
+      while true; do { r=2; } 2>/dev/null || break; i=$((i + 1)); [ $i -ge 3 ] && break; done; echo "same line after while"
+      echo "after while"
+
+  - name: "An error in a redirected group abandons the function it's in"
+    ignore_stderr: true
+    stdin: |
+      readonly r=1
+      f() { { r=2; } 2>/dev/null; echo "still in f"; }
+      f
+      echo "next line"
+
+  - name: "An error in a redirected group doesn't run the ERR trap"
+    ignore_stderr: true
+    stdin: |
+      trap 'echo "ERR trap"' ERR
+      readonly r=1
+      { r=2; } 2>/dev/null; echo "same line"
+      echo "next line"
+
+  # Not observable as a shell exit yet: an assignment error doesn't end a POSIX shell (see
+  # "A special builtin's usage and assignment errors are fatal in POSIX mode"), so this only
+  # checks that the rest of the line is still dropped.
+  - name: "An error in a redirected group drops the rest of the line (POSIX mode)"
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      readonly r=1
+      { r=2; } 2>/dev/null; echo "same line"
+
+  - name: "A fatal error in a redirected group drops the rest of the line (interactive)"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      unset zz
+      { echo "${zz?missing parameter}"; } 2>/dev/null; echo "same line"
+      echo "next line"
+
+  - name: "An error in a redirected group drops the rest of the line (interactive)"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      readonly r=1
+      { r=2; } 2>/dev/null; echo "same line"
+      echo "next line"
+
+  - name: "A syntax error in a sourced file fails the source and goes on"
+    known_failure: true # TODO(errors): the syntax error ends the shell
+    ignore_stderr: true
+    test_files:
+      - path: "bad.sh"
+        contents: |
+          echo )
+    stdin: |
+      . ./bad.sh
+      echo "after: $?"
+
+  - name: "A syntax error in a sourced file ends a POSIX shell"
+    ignore_stderr: true
+    test_files:
+      - path: "bad.sh"
+        contents: |
+          echo )
+    stdin: |
+      set -o posix
+      . ./bad.sh
+      echo "after: $?"
+

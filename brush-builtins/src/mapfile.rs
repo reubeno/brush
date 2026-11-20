@@ -1,26 +1,25 @@
 use std::io::{Read, Write};
 
-use clap::Parser;
-
 use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, env, error, variables};
 
 /// Read lines from standard input into an indexed array variable.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct MapFileCommand {
     /// Delimiter to use (defaults to newline).
     #[arg(short = 'd')]
     delimiter: Option<String>,
 
     /// Maximum number of entries to read (0 means no limit).
-    #[arg(short = 'n', default_value_t = 0)]
+    #[arg(short = 'n', default = "0", parse_with = |s: &str| at_least(s, 0))]
     max_count: i64,
 
     /// Index into array at which to start assignment.
-    #[arg(short = 'O', allow_hyphen_values = true)]
-    origin: Option<i64>,
+    #[arg(short = 'O', allow_negative_numbers)]
+    origin: Vec<i64>,
 
     /// Number of initial entries to skip.
-    #[arg(short = 's', default_value_t = 0, value_parser = clap::value_parser!(i64).range(0..))]
+    #[arg(short = 's', default = "0", parse_with = |s: &str| at_least(s, 0))]
     skip_count: i64,
 
     /// Whether or not to remove the delimiter from each read line.
@@ -28,43 +27,55 @@ pub(crate) struct MapFileCommand {
     remove_delimiter: bool,
 
     /// File descriptor to read from (defaults to stdin).
-    #[arg(short = 'u', default_value_t = 0)]
-    fd: brush_core::ShellFd,
+    #[arg(short = 'u')]
+    fd: Vec<brush_core::ShellFd>,
 
     /// Name of function to call for each group of lines.
     #[arg(short = 'C')]
     callback: Option<String>,
 
     /// Number of lines to pass the callback for each group.
-    #[arg(short = 'c', default_value_t = 5000, value_parser = clap::value_parser!(i64).range(1..))]
+    #[arg(short = 'c', default = "5000", parse_with = |s: &str| at_least(s, 1))]
     callback_group_size: i64,
 
     /// Name of array to read into.
-    #[arg(default_value = "MAPFILE")]
+    #[arg(positional, default = "MAPFILE")]
     array_var_name: String,
 }
 
-impl builtins::Command for MapFileCommand {
+/// A count of at least `min`. Each occurrence is checked as it is parsed, so a
+/// later valid one doesn't hide an earlier invalid one.
+fn at_least(text: &str, min: i64) -> Result<i64, String> {
+    let count: i64 = text.parse().map_err(|e| format!("{e}"))?;
+    if count < min {
+        return Err("out of range".to_owned());
+    }
+    Ok(count)
+}
+
+brush_winnow_args_adapter::impl_parse_args!(MapFileCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for MapFileCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.callback_group_size != 5000 || self.callback.is_some() {
             return error::unimp("mapfile -C/-c is not yet implemented");
         }
 
-        if let Some(origin) = self.origin {
-            if origin < 0 {
-                writeln!(
-                    context.stderr(),
-                    "{}: {origin}: invalid array origin",
-                    context.command_name
-                )?;
-                return Ok(ExecutionExitCode::GeneralError.into());
-            }
+        // Every -O and -u given is checked before reading, and the last one is used.
+        if let Some(origin) = self.origin.iter().find(|origin| **origin < 0) {
+            writeln!(
+                context.stderr(),
+                "{}: {origin}: invalid array origin",
+                context.command_name
+            )?;
+            return Ok(ExecutionExitCode::GeneralError.into());
         }
+        let origin = self.origin.last().copied();
 
         if let Some((_, var)) = context.shell.env().get(&self.array_var_name) {
             if var.value().is_associative_array() {
@@ -78,16 +89,23 @@ impl builtins::Command for MapFileCommand {
             }
         }
 
+        let mut fd = brush_core::openfiles::OpenFiles::STDIN_FD;
+        for &given in &self.fd {
+            fd = given;
+            context
+                .try_fd(fd)
+                .ok_or_else(|| ErrorKind::BadFileDescriptor(fd))?;
+        }
         let input_file = context
-            .try_fd(self.fd)
-            .ok_or_else(|| ErrorKind::BadFileDescriptor(self.fd))?;
+            .try_fd(fd)
+            .ok_or_else(|| ErrorKind::BadFileDescriptor(fd))?;
 
         // Read!
-        let results = self.read_entries(input_file)?;
+        let lines = self.read_lines(input_file).await?;
 
-        if let Some(origin) = self.origin {
+        if let Some(origin) = origin {
             // -O: preserve existing array, assign at offset.
-            for (elem_idx, (_key, value)) in results.0.into_iter().enumerate() {
+            for (elem_idx, value) in lines.into_iter().enumerate() {
                 // If the user is getting to wraparounds in *bash*, they got bigger problems.
                 #[allow(clippy::cast_possible_wrap)]
                 let elem_idx = elem_idx as i64;
@@ -104,7 +122,7 @@ impl builtins::Command for MapFileCommand {
             // No -O: replace the entire variable (clears existing).
             context.shell.env_mut().update_or_add(
                 &self.array_var_name,
-                variables::ShellValueLiteral::Array(results),
+                variables::ShellValueLiteral::from(lines),
                 |_| Ok(()),
                 env::EnvironmentLookup::Anywhere,
                 env::EnvironmentScope::Global,
@@ -116,10 +134,10 @@ impl builtins::Command for MapFileCommand {
 }
 
 impl MapFileCommand {
-    fn read_entries(
+    async fn read_lines(
         &self,
         mut input_file: brush_core::openfiles::OpenFile,
-    ) -> Result<variables::ArrayLiteral, brush_core::Error> {
+    ) -> Result<Vec<String>, brush_core::Error> {
         let _term_mode = setup_terminal_settings(&input_file)?;
 
         let mut entries = vec![];
@@ -151,6 +169,11 @@ impl MapFileCommand {
                         }
                     }
                     Ok(_) => unreachable!("input can only be 0, 1, or error"),
+                    // Nothing to read yet, but more may come (e.g., an empty in-memory pipe
+                    // on wasm whose writer, another task, hasn't finished): let it run.
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        tokio::task::yield_now().await;
+                    }
                     Err(e) => return Err(e.into()),
                 }
             }
@@ -170,10 +193,10 @@ impl MapFileCommand {
 
             let line_str = String::from_utf8_lossy(&line).to_string();
 
-            entries.push((None, line_str));
+            entries.push(line_str);
         }
 
-        Ok(variables::ArrayLiteral(entries))
+        Ok(entries)
     }
 }
 
@@ -191,4 +214,33 @@ fn setup_terminal_settings(
     }
 
     Ok(mode)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn read_lines_waits_for_input_that_isnt_ready_yet() {
+        let file = crate::not_ready::NotReadyYet::file([
+            None,
+            Some(b"a\nb".as_slice()),
+            None,
+            Some(b"\nc".as_slice()),
+        ]);
+        let command = MapFileCommand {
+            delimiter: None,
+            max_count: 0,
+            origin: vec![],
+            skip_count: 0,
+            remove_delimiter: true,
+            fd: vec![],
+            callback: None,
+            callback_group_size: 5000,
+            array_var_name: "MAPFILE".to_owned(),
+        };
+
+        let lines = command.read_lines(file).await.unwrap();
+        assert_eq!(lines, ["a", "b", "c"]);
+    }
 }

@@ -1,35 +1,46 @@
-use clap::Parser;
 use std::{ffi::OsString, io::Write, ops::ControlFlow};
 use uucore::format;
 
 use brush_core::{Error, ErrorKind, ExecutionResult, builtins, escape, expansion};
 
 /// Format a string.
-#[derive(Parser)]
-#[clap(disable_help_flag = true, disable_version_flag = true)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct PrintfCommand {
     /// If specified, the output of the command is assigned to this variable.
-    #[arg(short = 'v')]
-    output_variable: Option<String>,
+    #[arg(short = 'v', allow_hyphen_values)]
+    output_variables: Vec<String>,
 
     /// Format string + arguments to the format string.
-    ///
-    /// N.B. We intentionally do *not* enable `allow_hyphen_values` here. Doing so would
-    /// cause an attached short-option value such as `-va` (i.e. `-v a`) to be misparsed as
-    /// a positional argument. With it disabled, a format string that genuinely needs to
-    /// start with a hyphen must be preceded by `--`, matching other shells' behavior.
-    #[arg(trailing_var_arg = true, required = true)]
+    #[arg(positional, stop_flags, required)]
     format_and_args: Vec<String>,
 }
 
-impl builtins::Command for PrintfCommand {
+brush_winnow_args_adapter::impl_parse_args!(PrintfCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for PrintfCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
-        if let Some(variable_name) = &self.output_variable {
+        // Every -v name must be valid, not just the last one, which is used.
+        let parser_options = context.shell.parser_options();
+        if let Some(invalid) = self
+            .output_variables
+            .iter()
+            .find(|name| !valid_output_variable(name, &parser_options))
+        {
+            writeln!(
+                context.stderr(),
+                "{}: `{invalid}': not a valid identifier",
+                context.command_name
+            )?;
+            return Ok(ExecutionResult::new(2));
+        }
+
+        if let Some(variable_name) = self.output_variables.last() {
             // Format to a u8 vector.
             let mut result: Vec<u8> = vec![];
             format(self.format_and_args.as_slice(), &mut result)?;
@@ -56,12 +67,28 @@ impl builtins::Command for PrintfCommand {
     }
 }
 
+/// Whether `name` is a variable name, or one followed by a non-empty `[subscript]`,
+/// by the grammar of an assignment's name. The subscript isn't evaluated here.
+fn valid_output_variable(name: &str, options: &brush_parser::ParserOptions) -> bool {
+    use brush_parser::ast::{AssignmentName, AssignmentValue};
+    match brush_parser::word::parse_scalar_assignment(&format!("{name}="), options) {
+        Ok(assignment) if !assignment.append => {
+            matches!(&assignment.value, AssignmentValue::Scalar(word) if word.value.is_empty())
+                && match assignment.name {
+                    AssignmentName::VariableName(_) => true,
+                    AssignmentName::ArrayElementName(_, index) => !index.is_empty(),
+                }
+        }
+        _ => false,
+    }
+}
+
 fn format(format_and_args: &[String], writer: impl Write) -> Result<(), brush_core::Error> {
     match format_and_args {
         // Handle format string with arguments using uucore
         [fmt, args @ ..] => format_via_uucore(fmt, args.iter(), writer),
-        // Handle case with no format string (we shouldn't be able to get here since clap will
-        // fail parsing when the format string is missing)
+        // Handle case with no format string (we shouldn't be able to get here since parsing
+        // fails when the format string is missing)
         [] => Err(ErrorKind::PrintfInvalidUsage("missing operand".into()).into()),
     }
 }
@@ -140,16 +167,13 @@ fn format_via_uucore(
 }
 
 fn quote_printf_q(s: &str) -> String {
-    let quoted = escape::quote_if_needed(s, escape::QuoteMode::BackslashEscape);
-    if quoted.starts_with("$'") {
-        return quoted.into_owned();
-    }
-
-    let mut quoted = quoted.replace(":~", ":\\~").replace("=~", "=\\~");
-    if matches!(quoted.as_bytes().first(), Some(b'~' | b'#')) {
-        quoted.insert(0, '\\');
-    }
-    quoted
+    // Like bash's, this escapes commas too, so the result is safe even inside a brace
+    // expansion.
+    let options = escape::QuoteOptions::builder()
+        .preferred_mode(escape::QuoteMode::BackslashEscape)
+        .quote_commas(true)
+        .build();
+    escape::quote(s, &options).into_owned()
 }
 
 type ParsedFormatItem = (format::FormatItem<format::EscapedChar>, bool);
@@ -163,7 +187,7 @@ fn parse_format_string(format_string: &str) -> Result<Vec<ParsedFormatItem>, bru
             Ok(item) => Ok((item, false)),
             // Fixed q/Q modifiers are deliberately ignored; dynamic modifiers remain unsupported
             // until uucore exposes quoted-string metadata.
-            Err(format::FormatError::SpecError(spec))
+            Err(format::FormatError::SpecError(spec, span))
                 if matches!(spec.last(), Some(b'q' | b'Q'))
                     && !spec.contains(&b'*')
                     && !spec.contains(&b'$') =>
@@ -171,7 +195,7 @@ fn parse_format_string(format_string: &str) -> Result<Vec<ParsedFormatItem>, bru
                 let mut bare_q: &[u8] = b"q";
                 let item = format::Spec::parse(&mut bare_q)
                     .map(format::FormatItem::Spec)
-                    .map_err(|spec| format::FormatError::SpecError(spec.to_vec()))?;
+                    .map_err(|spec| format::FormatError::SpecError(spec.to_vec(), span))?;
                 Ok((item, !spec.contains(&b'#')))
             }
             Err(error) => Err(error),

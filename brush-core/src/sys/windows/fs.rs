@@ -74,6 +74,15 @@ pub fn resolve_executable(path: PathBuf) -> Option<PathBuf> {
     None
 }
 
+/// Resolves a path to a potential executable.
+///
+/// This exists because Windows needs `PATHEXT` resolution to determine if a path resolves to an executable or not.
+/// For example, if the cwd is `C:/` and there's an executable at `C:/tools/my_tool.cmd`, we expect `tools/my_tool`
+/// to resolve to the executable `my_tool.cmd` (assuming `.CMD` is part of `PATHEXT`).
+pub(crate) fn resolve_executable_path(path: PathBuf, working_dir: &Path) -> PathBuf {
+    resolve_executable(working_dir.join(&path)).unwrap_or(path)
+}
+
 impl crate::sys::fs::PathExt for Path {
     fn readable(&self) -> bool {
         self.exists()

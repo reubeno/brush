@@ -26,3 +26,33 @@ cases:
       echo "target: $target"
       let ref++
       echo "target: $target"
+
+  - name: "let with no arguments fails with status 1"
+    ignore_stderr: true
+    stdin: |
+      let
+      echo "let: $?"
+
+  - name: "let with only -- says an expression is expected"
+    stdin: |
+      strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
+      let -- 2>err.txt; echo "let --: $?"
+      strip <err.txt
+      let ""; echo "empty: $?"
+      rm err.txt
+
+  - name: "let with an unset variable under set -u ends the shell"
+    known_failure: true # TODO(let): fails with status 1, and the script carries on
+    ignore_stderr: true
+    stdin: |
+      set -u
+      let 'y = nope + 1'; echo "rc=$?"
+      echo next
+
+  - name: "let takes expressions that start with -"
+    stdin: |
+      let -1; echo "a=$?"
+      let -0; echo "b=$?"
+      let -- -1; echo "c=$?"
+      x=5; let --x; echo "d=$? x=$x"
+      x=5; let -- --x; echo "e=$? x=$x"

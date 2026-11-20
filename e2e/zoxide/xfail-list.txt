@@ -1,0 +1,3 @@
+# Tests that run but are expected to fail, one test name per line. Each entry needs a comment
+# saying why; the runner reports an entry that starts passing, so a fix cannot land unnoticed.
+# Lines starting with # are comments.

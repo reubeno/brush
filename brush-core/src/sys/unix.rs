@@ -1,15 +1,17 @@
 pub mod async_pipe;
-pub mod commands;
+pub(crate) mod commands;
 pub(crate) mod env;
 pub mod fd;
 pub mod fs;
 pub mod input;
+pub(crate) use crate::sys::os_pipes as pipes;
 pub(crate) mod network;
 pub mod poll;
 use crate::error;
 pub use crate::sys::tokio_process as process;
 pub mod resource;
 pub mod signal;
+pub(crate) use crate::sys::tokio_tasks as tasks;
 pub mod terminal;
 pub(crate) mod users;
 
