@@ -7,13 +7,13 @@ use crate::{
 
 impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
     /// Returns the function definition environment for this shell.
-    pub const fn funcs(&self) -> &functions::FunctionEnv {
+    pub fn funcs(&self) -> &functions::FunctionEnv {
         &self.funcs
     }
 
     /// Returns a mutable reference to the function definition environment for this shell.
-    pub const fn funcs_mut(&mut self) -> &mut functions::FunctionEnv {
-        &mut self.funcs
+    pub fn funcs_mut(&mut self) -> &mut functions::FunctionEnv {
+        std::sync::Arc::make_mut(&mut self.funcs)
     }
 
     /// Tries to undefine a function in the shell's environment. Returns whether or
@@ -23,7 +23,9 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
     ///
     /// * `name` - The name of the function to undefine.
     pub fn undefine_func(&mut self, name: &str) -> bool {
-        self.funcs.remove(name).is_some()
+        std::sync::Arc::make_mut(&mut self.funcs)
+            .remove(name)
+            .is_some()
     }
 
     /// Defines a function in the shell's environment. If a function already exists
@@ -41,7 +43,7 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
         source_info: &crate::SourceInfo,
     ) {
         let reg = functions::Registration::new(definition, source_info);
-        self.funcs.update(name.into(), reg);
+        std::sync::Arc::make_mut(&mut self.funcs).update(name.into(), reg);
     }
 
     /// Tries to return a mutable reference to the registration for a named function.
@@ -51,7 +53,7 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
     ///
     /// * `name` - The name of the function to lookup
     pub fn func_mut(&mut self, name: &str) -> Option<&mut functions::Registration> {
-        self.funcs.get_mut(name)
+        std::sync::Arc::make_mut(&mut self.funcs).get_mut(name)
     }
 
     /// Tries to define a function in the shell's environment using the given

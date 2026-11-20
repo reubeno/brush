@@ -37,7 +37,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
 
         let pwd = cleaned_path.to_string_lossy().to_string();
 
-        self.env.update_or_add(
+        std::sync::Arc::make_mut(&mut self.env).update_or_add(
             "PWD",
             variables::ShellValueLiteral::Scalar(pwd),
             |_| Ok(()),
@@ -46,7 +46,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         )?;
         let oldpwd = std::mem::replace(self.working_dir_mut(), cleaned_path);
 
-        self.env.update_or_add(
+        std::sync::Arc::make_mut(&mut self.env).update_or_add(
             "OLDPWD",
             variables::ShellValueLiteral::Scalar(oldpwd.to_string_lossy().to_string()),
             |_| Ok(()),
@@ -147,7 +147,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         if let Some(cached_path) = self.program_location_cache.get(&candidate_name) {
             Some(cached_path)
         } else if let Some(found_path) = self.find_first_executable_in_path(&candidate_name) {
-            self.program_location_cache
+            self.program_location_cache_mut()
                 .set(candidate_name, found_path.clone());
             Some(found_path)
         } else {
@@ -188,7 +188,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         }
 
         let found_path = self.resolve_command_in_path(candidate_name.as_ref())?;
-        self.program_location_cache
+        self.program_location_cache_mut()
             .set(candidate_name, found_path.clone());
 
         Some(found_path)
@@ -272,10 +272,10 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         &mut self,
         open_fds: impl Iterator<Item = (ShellFd, openfiles::OpenFile)>,
     ) {
-        self.open_files = openfiles::OpenFiles::from(open_fds);
+        self.open_files = std::sync::Arc::new(openfiles::OpenFiles::from(open_fds));
     }
 
-    pub(crate) const fn persistent_open_files(&self) -> &openfiles::OpenFiles {
+    pub(crate) fn persistent_open_files(&self) -> &openfiles::OpenFiles {
         &self.open_files
     }
 }

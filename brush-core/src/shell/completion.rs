@@ -24,7 +24,7 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
 
     /// Returns the programmable completion in progress, if any (e.g. while its completion
     /// function runs), whose options the `compopt` builtin shows.
-    pub const fn in_progress_completion(&self) -> Option<&completion::InProgressCompletion> {
+    pub fn in_progress_completion(&self) -> Option<&completion::InProgressCompletion> {
         self.completion.in_progress.as_ref()
     }
 
@@ -33,16 +33,16 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
     pub fn in_progress_completion_options_mut(
         &mut self,
     ) -> Option<&mut completion::GenerationOptions> {
-        self.completion
+        std::sync::Arc::make_mut(&mut self.completion)
             .in_progress
             .as_mut()
             .map(|in_progress| &mut in_progress.options)
     }
 
     /// Returns a mutable reference to the programmable completion in progress, if any.
-    pub(crate) const fn in_progress_completion_mut(
+    pub(crate) fn in_progress_completion_mut(
         &mut self,
     ) -> &mut Option<completion::InProgressCompletion> {
-        &mut self.completion.in_progress
+        &mut std::sync::Arc::make_mut(&mut self.completion).in_progress
     }
 }
