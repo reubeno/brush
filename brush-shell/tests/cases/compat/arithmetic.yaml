@@ -407,19 +407,28 @@ cases:
 
   #
   # A failed arithmetic evaluation is a command that returns non-zero, not a fatal error: a shell
-  # reports it and carries on with the rest of the list. brush abandons the remaining commands in
-  # the list, so the status line never prints. Each of these passes when the commands are written
-  # on separate lines; only sequencing within one list diverges.
+  # reports it and carries on with the rest of the list.
   #
   - name: "Division by zero yields a non-zero status without aborting the list"
-    known_failure: true # TODO: arithmetic errors should not abandon the rest of a command list
+    ignore_stderr: true
     stdin: |
       (( 1 / 0 )); echo "status: $?"
 
   - name: "Arithmetic assignment to a readonly variable does not abort the list"
-    known_failure: true # TODO: arithmetic errors should not abandon the rest of a command list
+    known_failure: true # TODO: brush lets an arithmetic assignment write to an element of a readonly array
+    ignore_stderr: true
     stdin: |
       a=(one); readonly a; (( a[0] = 9 )); echo "status: $?"
+
+  - name: "Arithmetic syntax error yields a non-zero status without aborting the list"
+    ignore_stderr: true
+    stdin: |
+      (( 1 + )); echo "status: $?"
+      x="1 +"; (( x )); echo "status: $?"
+      (( 2 ** -1 )) || echo "failed: $?"
+      f() { (( 1 + )); echo "still in f: $?"; }; f; echo "f returned: $?"
+      { (( 1 / 0 )); echo "same group: $?"; }; echo "after group: $?"
+      readonly r=1; (( r = 2 )); echo "readonly: $? $r"
 
   - name: "Arithmetic error on its own line leaves the following command reachable"
     ignore_stderr: true

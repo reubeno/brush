@@ -1089,8 +1089,8 @@ impl Execute for ast::ArithmeticCommand {
         shell: &mut Shell<impl extensions::ShellExtensions>,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        let value = self.expr.eval(shell, params, true).await?;
-        let result = if value != 0 {
+        let value = eval_arithmetic_command_expr(shell, params, &self.expr).await?;
+        let result = if value.is_some_and(|value| value != 0) {
             ExecutionResult::success()
         } else {
             ExecutionResult::general_error()
@@ -1102,6 +1102,30 @@ impl Execute for ast::ArithmeticCommand {
     }
 }
 
+/// Evaluates the expression of an arithmetic command (`(( ... ))`) or one of the expressions in
+/// the header of an arithmetic `for` loop. Like bash, a failed evaluation (a syntax error,
+/// division by zero, and so on) is reported and makes the command fail with status 1, but doesn't
+/// abandon the rest of the command list; `None` is returned in that case. Errors from expanding
+/// the expression, or from referencing an unset variable under `set -u`, are still returned.
+async fn eval_arithmetic_command_expr(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    params: &ExecutionParameters,
+    expr: &ast::UnexpandedArithmeticExpr,
+) -> Result<Option<i64>, error::Error> {
+    match expr.eval(shell, params, true).await {
+        Ok(value) => Ok(Some(value)),
+        Err(
+            err @ (arithmetic::EvalError::FailedToExpandExpression(_)
+            | arithmetic::EvalError::ExpandingUnsetVariable(_)),
+        ) => Err(err.into()),
+        Err(err) => {
+            let err = error::Error::from(err);
+            let _ = shell.display_error(&mut params.stderr(shell), &err);
+            Ok(None)
+        }
+    }
+}
+
 #[async_trait::async_trait]
 impl Execute for ast::ArithmeticForClauseCommand {
     async fn execute(
@@ -1110,15 +1134,23 @@ impl Execute for ast::ArithmeticForClauseCommand {
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         let mut result = ExecutionResult::success();
-        if let Some(initializer) = &self.initializer {
-            initializer.eval(shell, params, true).await?;
+        if let Some(initializer) = &self.initializer
+            && eval_arithmetic_command_expr(shell, params, initializer)
+                .await?
+                .is_none()
+        {
+            return Ok(arithmetic_for_failed(shell));
         }
 
         loop {
             if let Some(condition) = &self.condition {
                 // An empty condition (e.g., `for (( ; ; ))`) means "always true".
-                if !condition.value.is_empty() && condition.eval(shell, params, true).await? == 0 {
-                    break;
+                if !condition.value.is_empty() {
+                    match eval_arithmetic_command_expr(shell, params, condition).await? {
+                        Some(0) => break,
+                        Some(_) => (),
+                        None => return Ok(arithmetic_for_failed(shell)),
+                    }
                 }
             }
 
@@ -1135,14 +1167,25 @@ impl Execute for ast::ArithmeticForClauseCommand {
                 break;
             }
 
-            if let Some(updater) = &self.updater {
-                updater.eval(shell, params, true).await?;
+            if let Some(updater) = &self.updater
+                && eval_arithmetic_command_expr(shell, params, updater)
+                    .await?
+                    .is_none()
+            {
+                return Ok(arithmetic_for_failed(shell));
             }
         }
 
         shell.set_last_exit_status(result.exit_code.into());
         Ok(result)
     }
+}
+
+/// Ends an arithmetic `for` loop whose header failed to evaluate, with status 1.
+fn arithmetic_for_failed(shell: &mut Shell<impl extensions::ShellExtensions>) -> ExecutionResult {
+    let result = ExecutionResult::general_error();
+    shell.set_last_exit_status(result.exit_code.into());
+    result
 }
 
 #[async_trait::async_trait]
