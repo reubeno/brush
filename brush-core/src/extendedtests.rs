@@ -351,10 +351,10 @@ async fn apply_binary_predicate(
             Ok(left > right)
         }
         ast::BinaryPredicate::ArithmeticEqualTo => {
-            let left =
-                arithmetic::expand_and_eval(shell, params, left.value.as_str(), false).await?;
-            let right =
-                arithmetic::expand_and_eval(shell, params, right.value.as_str(), false).await?;
+            let Some((left, right)) = eval_arithmetic_operands(shell, params, left, right).await?
+            else {
+                return Ok(false);
+            };
 
             if shell.options().print_commands_and_arguments {
                 shell
@@ -365,10 +365,10 @@ async fn apply_binary_predicate(
             Ok(left == right)
         }
         ast::BinaryPredicate::ArithmeticNotEqualTo => {
-            let left =
-                arithmetic::expand_and_eval(shell, params, left.value.as_str(), false).await?;
-            let right =
-                arithmetic::expand_and_eval(shell, params, right.value.as_str(), false).await?;
+            let Some((left, right)) = eval_arithmetic_operands(shell, params, left, right).await?
+            else {
+                return Ok(false);
+            };
 
             if shell.options().print_commands_and_arguments {
                 shell
@@ -379,10 +379,10 @@ async fn apply_binary_predicate(
             Ok(left != right)
         }
         ast::BinaryPredicate::ArithmeticLessThan => {
-            let left =
-                arithmetic::expand_and_eval(shell, params, left.value.as_str(), false).await?;
-            let right =
-                arithmetic::expand_and_eval(shell, params, right.value.as_str(), false).await?;
+            let Some((left, right)) = eval_arithmetic_operands(shell, params, left, right).await?
+            else {
+                return Ok(false);
+            };
 
             if shell.options().print_commands_and_arguments {
                 shell
@@ -393,10 +393,10 @@ async fn apply_binary_predicate(
             Ok(left < right)
         }
         ast::BinaryPredicate::ArithmeticLessThanOrEqualTo => {
-            let left =
-                arithmetic::expand_and_eval(shell, params, left.value.as_str(), false).await?;
-            let right =
-                arithmetic::expand_and_eval(shell, params, right.value.as_str(), false).await?;
+            let Some((left, right)) = eval_arithmetic_operands(shell, params, left, right).await?
+            else {
+                return Ok(false);
+            };
 
             if shell.options().print_commands_and_arguments {
                 shell
@@ -407,10 +407,10 @@ async fn apply_binary_predicate(
             Ok(left <= right)
         }
         ast::BinaryPredicate::ArithmeticGreaterThan => {
-            let left =
-                arithmetic::expand_and_eval(shell, params, left.value.as_str(), false).await?;
-            let right =
-                arithmetic::expand_and_eval(shell, params, right.value.as_str(), false).await?;
+            let Some((left, right)) = eval_arithmetic_operands(shell, params, left, right).await?
+            else {
+                return Ok(false);
+            };
 
             if shell.options().print_commands_and_arguments {
                 shell
@@ -421,10 +421,10 @@ async fn apply_binary_predicate(
             Ok(left > right)
         }
         ast::BinaryPredicate::ArithmeticGreaterThanOrEqualTo => {
-            let left =
-                arithmetic::expand_and_eval(shell, params, left.value.as_str(), false).await?;
-            let right =
-                arithmetic::expand_and_eval(shell, params, right.value.as_str(), false).await?;
+            let Some((left, right)) = eval_arithmetic_operands(shell, params, left, right).await?
+            else {
+                return Ok(false);
+            };
 
             if shell.options().print_commands_and_arguments {
                 shell
@@ -489,6 +489,57 @@ async fn apply_binary_predicate(
 
             let eq = pattern.exactly_matches(s.as_str())?;
             Ok(!eq)
+        }
+    }
+}
+
+/// Evaluates the operands of an arithmetic comparison (`-eq`, `-lt`, and so on) in `[[ ]]`.
+///
+/// Like bash, both operands are shell-expanded first, so an expansion error is returned and
+/// expansion side effects (like `${x:=5}`) happen whatever the left operand evaluates to. A failed
+/// arithmetic evaluation (a syntax error, division by zero, and so on) is then reported and makes
+/// the comparison false instead of abandoning the rest of the command list; `None` is returned in
+/// that case, and the right operand isn't evaluated when the left one failed. A bad array
+/// subscript, or a reference to an unset variable under `set -u`, is still returned as an error.
+async fn eval_arithmetic_operands(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    params: &ExecutionParameters,
+    left: &ast::Word,
+    right: &ast::Word,
+) -> Result<Option<(i64, i64)>, error::Error> {
+    let left = arithmetic::expand(shell, params, left.value.as_str()).await?;
+    let right = arithmetic::expand(shell, params, right.value.as_str()).await?;
+
+    let Some(left) = eval_arithmetic_operand(shell, params, left).await? else {
+        return Ok(None);
+    };
+    let Some(right) = eval_arithmetic_operand(shell, params, right).await? else {
+        return Ok(None);
+    };
+    Ok(Some((left, right)))
+}
+
+async fn eval_arithmetic_operand(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    params: &ExecutionParameters,
+    expanded_operand: String,
+) -> Result<Option<i64>, error::Error> {
+    match arithmetic::eval_expanded_inner(shell, params, expanded_operand, false).await {
+        Ok(value) => Ok(Some(value)),
+        Err(err)
+            if err.in_subscript
+                || matches!(
+                    err.error,
+                    arithmetic::EvalError::FailedToExpandExpression(_)
+                        | arithmetic::EvalError::ExpandingUnsetVariable(_)
+                ) =>
+        {
+            Err(err.error.into())
+        }
+        Err(err) => {
+            let err = error::Error::from(err.error);
+            let _ = shell.display_error(&mut params.stderr(shell), &err);
+            Ok(None)
         }
     }
 }
