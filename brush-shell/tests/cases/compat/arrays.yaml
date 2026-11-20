@@ -508,6 +508,13 @@ cases:
       unset 'b[-3]'
       declare -p b
 
+  - name: "Negative index into an array whose highest index is the largest"
+    stdin: |
+      b=([0]=zero [5]=five [9223372036854775807]=max)
+      echo "<${b[-1]}> <${b[-9223372036854775803]}> <${b[-9223372036854775808]}>"
+      b[-1]=new
+      declare -p b
+
   #
   # Assigning a list to a single array element is an error; the shell reports it and
   # continues with a failure status.
