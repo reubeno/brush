@@ -76,7 +76,7 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
 
         let def = brush_parser::ast::FunctionDefinition {
             fname: name.clone().into(),
-            body: func_body,
+            body: func_body.into(),
         };
 
         self.define_func(name, def, &crate::SourceInfo::default());

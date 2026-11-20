@@ -794,7 +794,7 @@ pub(crate) async fn invoke_shell_function(
     mut context: ExecutionContext<'_, impl extensions::ShellExtensions>,
     args: &[CommandArg],
 ) -> Result<ExecutionSpawnResult, error::Error> {
-    let ast::FunctionBody(body, redirects) = &function.definition().body;
+    let ast::FunctionBody(body, redirects) = &*function.definition().body;
 
     // Apply any redirects specified at function definition-time.
     if let Some(redirects) = redirects {
