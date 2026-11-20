@@ -117,7 +117,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         history.add(crate::history::Item {
             id: 0,
             command_line: command.to_owned(),
-            timestamp: Some(chrono::Utc::now()),
+            timestamp: Some(crate::history::ItemTimestamp::now()),
             dirty: true,
         })?;
 

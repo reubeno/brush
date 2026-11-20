@@ -1,6 +1,5 @@
 //! Facilities for tracking and persisting the shell's command history.
 
-use chrono::Utc;
 use std::{
     collections::BTreeSet,
     io::{BufRead, Read, Write},
@@ -28,14 +27,15 @@ impl History {
     /// stream. If errors are encountered reading lines from the stream, unreadable lines will
     /// be skipped but the call will still return successfully, with a warning logged. An error
     /// result will be returned only if an internal error occurs updating the history. Like
-    /// bash, an entry the stream gives no timestamp gets the time it's read.
+    /// bash, an entry the stream gives no timestamp gets the time it's read; so does one whose
+    /// timestamp is past the year 9999.
     ///
     /// # Arguments
     ///
     /// * `reader` - The readable stream to import history from.
     pub fn import(reader: impl Read) -> Result<Self, error::Error> {
         let mut history = Self::default();
-        let read_time = Utc::now();
+        let read_time = ItemTimestamp::now();
 
         let buf_reader = std::io::BufReader::new(reader);
 
@@ -60,7 +60,7 @@ impl History {
             // Look for timestamp comments; ignore other comment lines.
             if let Some(comment) = line.strip_prefix("#") {
                 if let Ok(seconds_since_epoch) = comment.trim().parse() {
-                    next_timestamp = ItemTimestamp::from_timestamp(seconds_since_epoch, 0);
+                    next_timestamp = ItemTimestamp::from_unix_seconds(seconds_since_epoch);
                 } else {
                     next_timestamp = None;
                 }
@@ -223,7 +223,7 @@ impl History {
             }
 
             if write_timestamps && let Some(timestamp) = item.timestamp {
-                writeln!(file, "#{}", timestamp.timestamp())?;
+                writeln!(file, "#{}", timestamp.as_unix_seconds())?;
             }
 
             writeln!(file, "{}", item.command_line)?;
@@ -344,8 +344,68 @@ impl HistoryControl {
     }
 }
 
-/// Represents a timestamp for a history item.
-pub type ItemTimestamp = chrono::DateTime<Utc>;
+/// Represents a timestamp for a history item: an instant in time, independent of time zone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
+pub struct ItemTimestamp(jiff::Timestamp);
+
+impl ItemTimestamp {
+    /// Returns the current time.
+    pub fn now() -> Self {
+        Self(jiff::Timestamp::now())
+    }
+
+    /// Converts from a [`std::time::SystemTime`], keeping its sub-second precision. Returns
+    /// `None` outside the years -9999 to 9999.
+    ///
+    /// # Arguments
+    ///
+    /// * `time` - The time to convert.
+    pub fn from_system_time(time: std::time::SystemTime) -> Option<Self> {
+        jiff::Timestamp::try_from(time).ok().map(Self)
+    }
+
+    /// Converts to a [`std::time::SystemTime`], keeping its sub-second precision. Returns
+    /// `None` if the platform's `SystemTime` can't represent it (some can't represent times
+    /// before 1970).
+    pub fn to_system_time(self) -> Option<std::time::SystemTime> {
+        let since_epoch = self.0.as_duration();
+        if since_epoch.is_negative() {
+            std::time::UNIX_EPOCH.checked_sub(since_epoch.unsigned_abs())
+        } else {
+            std::time::UNIX_EPOCH.checked_add(since_epoch.unsigned_abs())
+        }
+    }
+
+    /// Formats the timestamp in local time (the system time zone), using a `strftime`-style
+    /// format string, as the C library does in the POSIX locale. A directive that can't be
+    /// rendered is left as written.
+    ///
+    /// # Arguments
+    ///
+    /// * `format` - The `strftime`-style format string.
+    pub fn format_local(self, format: &str) -> String {
+        crate::timing::strftime(&crate::timing::to_local(self.0), format)
+    }
+
+    /// Converts from whole seconds since the Unix epoch (as history files record them),
+    /// returning `None` outside the years -9999 to 9999.
+    pub(crate) fn from_unix_seconds(seconds: i64) -> Option<Self> {
+        jiff::Timestamp::from_second(seconds).ok().map(Self)
+    }
+
+    /// Returns the whole seconds since the Unix epoch, rounded down (so a time before the
+    /// epoch with a fraction of a second goes to the earlier second).
+    pub(crate) fn as_unix_seconds(self) -> i64 {
+        let seconds = self.0.as_second();
+        if self.0.subsec_nanosecond() < 0 {
+            seconds - 1
+        } else {
+            seconds
+        }
+    }
+}
 
 /// Represents an item in the history.
 #[derive(Clone, Default)]
@@ -355,7 +415,8 @@ pub struct Item {
     pub id: ItemId,
     /// The actual command line.
     pub command_line: String,
-    /// The timestamp when the command was started.
+    /// The timestamp when the command was started, if known (a history file needn't record
+    /// one).
     pub timestamp: Option<ItemTimestamp>,
     /// Whether or not the item is dirty, i.e., has not yet been written to backing storage.
     pub dirty: bool,
@@ -371,7 +432,7 @@ impl Item {
         Self {
             id: 0, // NOTE: ID will be assigned when added to the history.
             command_line: command_line.into(),
-            timestamp: Some(chrono::Utc::now()),
+            timestamp: Some(ItemTimestamp::now()),
             dirty: true,
         }
     }
@@ -382,9 +443,11 @@ impl Item {
 pub struct Query {
     /// Whether to search forward or backward
     pub direction: Direction,
-    /// Optionally, clamp results to items with a timestamp strictly after this.
+    /// Optionally, clamp results to items with a timestamp strictly after this. Items with no
+    /// timestamp aren't excluded by it.
     pub not_at_or_before_time: Option<ItemTimestamp>,
-    /// Optionally, clamp results to items with a timestamp strictly before this.
+    /// Optionally, clamp results to items with a timestamp strictly before this. Items with no
+    /// timestamp aren't excluded by it.
     pub not_at_or_after_time: Option<ItemTimestamp>,
     /// Optionally, clamp results to items with an ID equal strictly after this.
     pub not_at_or_before_id: Option<ItemId>,
@@ -808,7 +871,7 @@ mod tests {
     /// with no timestamp isn't excluded by time bounds.
     #[test]
     fn query_includes_by_each_filter() {
-        let at = |seconds| ItemTimestamp::from_timestamp(seconds, 0);
+        let at = |seconds| ItemTimestamp::from_unix_seconds(seconds);
         let item = |id, command_line: &str, timestamp| Item {
             id,
             command_line: command_line.to_owned(),
@@ -894,7 +957,7 @@ mod tests {
     /// A new item is unsaved and stamped now; adding it gives it the next ID.
     #[test]
     fn new_items_are_unsaved_and_stamped() -> Result<(), error::Error> {
-        let before = Utc::now();
+        let before = ItemTimestamp::now();
         let item = Item::new("ls");
         assert!(item.dirty);
         assert!(item.timestamp.is_some_and(|ts| ts >= before));
@@ -911,7 +974,7 @@ mod tests {
     /// items saved and numbered from 0.
     #[test]
     fn import_reads_history_files() -> Result<(), error::Error> {
-        let before = Utc::now();
+        let before = ItemTimestamp::now();
         let file = b"#1700000000\na\n#1700000005\n#not a time\nb\n#1700000001\n#1700000002\nc\n\xff\xfe\nd\n";
         let mut history = History::import(&file[..])?;
 
@@ -919,12 +982,12 @@ mod tests {
         let timestamps: Vec<_> = history.iter().map(|item| item.timestamp).collect();
         assert_eq!(
             timestamps[0],
-            ItemTimestamp::from_timestamp(1_700_000_000, 0)
+            ItemTimestamp::from_unix_seconds(1_700_000_000)
         );
         assert!(timestamps[1].is_some_and(|ts| ts >= before));
         assert_eq!(
             timestamps[2],
-            ItemTimestamp::from_timestamp(1_700_000_002, 0)
+            ItemTimestamp::from_unix_seconds(1_700_000_002)
         );
         assert!(timestamps[3].is_some_and(|ts| ts >= before));
         assert!(history.iter().all(|item| !item.dirty));
@@ -949,7 +1012,7 @@ mod tests {
 
         let mut history = History::default();
         history.add(Item {
-            timestamp: ItemTimestamp::from_timestamp(1_700_000_000, 0),
+            timestamp: ItemTimestamp::from_unix_seconds(1_700_000_000),
             ..Item::new("a")
         })?;
         history.add(Item {
@@ -966,7 +1029,7 @@ mod tests {
         assert_eq!(command_lines(reread.iter()), ["existing", "a", "b"]);
         assert_eq!(
             reread.get(1).and_then(|item| item.timestamp),
-            ItemTimestamp::from_timestamp(1_700_000_000, 0)
+            ItemTimestamp::from_unix_seconds(1_700_000_000)
         );
 
         Ok(())
@@ -1045,16 +1108,78 @@ mod tests {
     /// Like bash, an entry the file gives no timestamp gets the time it's read.
     #[test]
     fn import_stamps_entries_without_timestamps() -> Result<(), error::Error> {
-        let before = Utc::now();
+        let before = ItemTimestamp::now();
         let history = History::import(&b"#1700000000\nls\necho hi\n"[..])?;
 
         let timestamps: Vec<_> = history.iter().map(|item| item.timestamp).collect();
         assert_eq!(
             timestamps[0],
-            ItemTimestamp::from_timestamp(1_700_000_000, 0)
+            ItemTimestamp::from_unix_seconds(1_700_000_000)
         );
         assert!(timestamps[1].is_some_and(|ts| ts >= before));
 
         Ok(())
+    }
+
+    /// A timestamp past the year 9999 (here, one in milliseconds) is out of range, so the
+    /// entry is stamped with the time it's read, as one with no timestamp is.
+    #[test]
+    fn import_stamps_entries_with_out_of_range_timestamps() -> Result<(), error::Error> {
+        let before = ItemTimestamp::now();
+        let history = History::import(&b"#253402207200\na\n#253402207201\nb\n"[..])?;
+
+        let timestamps: Vec<_> = history.iter().map(|item| item.timestamp).collect();
+        assert_eq!(
+            timestamps[0],
+            ItemTimestamp::from_unix_seconds(253_402_207_200)
+        );
+        assert!(timestamps[1].is_some_and(|ts| ts >= before));
+
+        Ok(())
+    }
+
+    /// Converting to and from `SystemTime` keeps sub-second precision, on both sides of the
+    /// epoch, and a time past the year 9999 is out of range.
+    #[test]
+    fn system_time_round_trips() {
+        let after = std::time::UNIX_EPOCH + std::time::Duration::new(1_700_000_000, 123_456_789);
+        let timestamp = ItemTimestamp::from_system_time(after);
+        assert_eq!(
+            timestamp.and_then(ItemTimestamp::to_system_time),
+            Some(after)
+        );
+        assert!(timestamp > ItemTimestamp::from_unix_seconds(1_700_000_000));
+        assert_eq!(
+            timestamp.map(ItemTimestamp::as_unix_seconds),
+            Some(1_700_000_000)
+        );
+
+        // Not every platform's SystemTime reaches before the epoch (wasm's doesn't).
+        if let Some(before) =
+            std::time::UNIX_EPOCH.checked_sub(std::time::Duration::new(5, 250_000_000))
+        {
+            let timestamp = ItemTimestamp::from_system_time(before);
+            assert_eq!(
+                timestamp.and_then(ItemTimestamp::to_system_time),
+                Some(before)
+            );
+            // Whole seconds round down, as history files record them.
+            assert_eq!(timestamp.map(ItemTimestamp::as_unix_seconds), Some(-6));
+        }
+
+        let far_future =
+            std::time::UNIX_EPOCH.checked_add(std::time::Duration::from_secs(253_402_207_201));
+        assert_eq!(far_future.and_then(ItemTimestamp::from_system_time), None);
+    }
+
+    /// Formatting renders the given format; seconds since the epoch don't depend on the
+    /// local time zone.
+    #[test]
+    fn format_local_renders_the_format() {
+        let timestamp = ItemTimestamp::from_unix_seconds(1_700_000_000);
+        assert_eq!(
+            timestamp.map(|ts| ts.format_local("at %s.")),
+            Some("at 1700000000.".to_owned())
+        );
     }
 }

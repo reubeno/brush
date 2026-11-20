@@ -195,6 +195,21 @@ cases:
       : cmd2
       history
 
+  - name: "HISTTIMEFORMAT with TZ set in the shell"
+    known_failure: true # TODO(history): brush uses the time zone it started with, not the shell's TZ
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+      HISTTIMEFORMAT: "%Z "
+      TZ: "UTC"
+    stdin: |
+      : cmd1
+      history 1
+      TZ=Asia/Tokyo
+      history 1
+      # Keep the history file, which brush writes timestamps to, out of the comparison.
+      unset HISTFILE
+
   - name: "history file with unreadable lines"
     ignore_stderr: true # Ignore brush's warnings about unreadable lines
     stdin: |

@@ -168,7 +168,7 @@ impl InputBackend for ReedlineInputBackend {
 
         match reedline.read_line(&prompt) {
             Ok(reedline::Signal::Success(s)) => Ok(ReadResult::Input(s)),
-            Ok(reedline::Signal::CtrlC) => Ok(ReadResult::Interrupted),
+            Ok(reedline::Signal::CtrlC(_)) => Ok(ReadResult::Interrupted),
             Ok(reedline::Signal::CtrlD) => Ok(ReadResult::Eof),
             Ok(reedline::Signal::HostCommand(cmd)) => Ok(ReadResult::BoundCommand(cmd)),
             Ok(_) => Err(ShellError::UnexpectedInputFailure),
