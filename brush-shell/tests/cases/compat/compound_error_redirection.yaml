@@ -1,0 +1,53 @@
+name: "Compound error redirection"
+cases:
+  - name: "Brace group readonly error uses redirected stderr"
+    stdin: |
+      readonly r=1
+      { r=2; } 2>/dev/null
+    expected_exit_code: 1
+    expected_stdout: ""
+    expected_stderr: ""
+
+  - name: "Successful brace group still writes stdout"
+    stdin: |
+      { echo success; } 2>/dev/null
+    expected_exit_code: 0
+    expected_stdout: |
+      success
+    expected_stderr: ""
+
+  - name: "Brace group error is captured in a file"
+    stdin: |
+      readonly r=1
+      { r=2; } 2>error.txt
+      test -s error.txt && echo captured
+      rm error.txt
+    expected_exit_code: 0
+    expected_stdout: |
+      captured
+    expected_stderr: ""
+
+  - name: "If readonly error uses redirected stderr"
+    stdin: |
+      readonly r=1
+      if true; then r=2; fi 2>/dev/null
+    expected_exit_code: 1
+    expected_stdout: ""
+    expected_stderr: ""
+
+  - name: "Brace group required parameter error uses redirected stderr"
+    stdin: |
+      unset x
+      { echo "${x?msg}"; } 2>/dev/null
+      echo unreachable
+    expected_exit_code: 1
+    expected_stdout: ""
+    expected_stderr: ""
+
+  - name: "Brace group invalid array index uses redirected stderr"
+    stdin: |
+      a=()
+      { a[-5]=y; } 2>/dev/null
+    expected_exit_code: 1
+    expected_stdout: ""
+    expected_stderr: ""
