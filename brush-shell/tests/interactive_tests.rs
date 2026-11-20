@@ -10,6 +10,8 @@
 #![cfg(test)]
 #![allow(clippy::panic_in_result_fn)]
 
+mod common;
+
 use anyhow::Context;
 use std::os::unix::process::CommandExt as _;
 
@@ -550,9 +552,10 @@ fn stop_signal_to_shell_leaves_background_jobs_alone() -> anyhow::Result<()> {
     Ok(())
 }
 
-type ShellSession = ReplSession<Session<UnixProcess, LogStream<PtyStream, std::io::Stdout>>>;
+type ShellSession =
+    common::WithHome<ReplSession<Session<UnixProcess, LogStream<PtyStream, std::io::Stdout>>>>;
 // N.B. Comment out the above line and uncomment out the following line to disable logging of the
-// session. type ShellSession = ReplSession<Session<UnixProcess, PtyStream>>;
+// session. type ShellSession = common::WithHome<ReplSession<Session<UnixProcess, PtyStream>>>;
 
 trait SessionExt {
     fn suspend(&mut self) -> anyhow::Result<()>;
@@ -679,9 +682,7 @@ fn start_shell_session_with(
     configure: impl FnOnce(&mut std::process::Command),
 ) -> anyhow::Result<ShellSession> {
     const DEFAULT_PROMPT: &str = "brush> ";
-    let shell_path = assert_cmd::cargo::cargo_bin!("brush");
-
-    let mut cmd = std::process::Command::new(shell_path);
+    let (mut cmd, home) = common::brush_command()?;
     cmd.args([
         "--noprofile",
         "--no-config",
@@ -702,5 +703,5 @@ fn start_shell_session_with(
     let mut session = expectrl::repl::ReplSession::new(session, DEFAULT_PROMPT);
     session.set_echo(true);
 
-    Ok(session)
+    Ok(common::WithHome::new(session, home))
 }

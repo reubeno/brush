@@ -26,6 +26,8 @@
 #![cfg(test)]
 #![allow(clippy::panic_in_result_fn)]
 
+mod common;
+
 use anyhow::Context;
 use std::time::Duration;
 
@@ -47,7 +49,7 @@ const DEFAULT_PROMPT: &str = "brush> ";
 /// with a bare command line; interactivity is inferred from stdin being a terminal.
 #[test]
 fn default_backend_plain_starts_promptly() -> anyhow::Result<()> {
-    let session = spawn_shell(brush_command(&[]))?;
+    let session = spawn_shell(brush_command(&[])?)?;
     expect_responsive_shell(session, /* expect_prompt */ true)
 }
 
@@ -55,7 +57,7 @@ fn default_backend_plain_starts_promptly() -> anyhow::Result<()> {
 /// interactive mode.
 #[test]
 fn default_backend_interactive_flag_starts_promptly() -> anyhow::Result<()> {
-    let session = spawn_shell(brush_command(&["-i"]))?;
+    let session = spawn_shell(brush_command(&["-i"])?)?;
     expect_responsive_shell(session, /* expect_prompt */ true)
 }
 
@@ -64,7 +66,7 @@ fn default_backend_interactive_flag_starts_promptly() -> anyhow::Result<()> {
 /// `login_shell_via_argv0_shows_prompt` in `interactive_tests.rs` covers.
 #[test]
 fn default_backend_login_flag_starts_promptly() -> anyhow::Result<()> {
-    let session = spawn_shell(brush_command(&["-l"]))?;
+    let session = spawn_shell(brush_command(&["-l"])?)?;
     expect_responsive_shell(session, /* expect_prompt */ true)
 }
 
@@ -74,15 +76,12 @@ fn default_backend_login_flag_starts_promptly() -> anyhow::Result<()> {
 /// rather than a specific prompt string.
 #[test]
 fn login_flag_with_empty_home_starts_promptly() -> anyhow::Result<()> {
-    let empty_home = tempfile::tempdir()?;
-
-    let shell_path = assert_cmd::cargo::cargo_bin!("brush");
-    let mut cmd = std::process::Command::new(shell_path);
+    // The clean environment's HOME starts out empty.
+    let (mut cmd, home) = common::brush_command()?;
     cmd.args(["-l", "--disable-bracketed-paste", "--disable-color"]);
-    cmd.env("HOME", empty_home.path());
     cmd.env("TERM", "linux");
 
-    let session = spawn_shell(cmd)?;
+    let session = spawn_shell((cmd, home))?;
     expect_responsive_shell(session, /* expect_prompt */ false)
 }
 
@@ -97,6 +96,7 @@ fn login_shell_as_grandchild_starts_promptly() -> anyhow::Result<()> {
     let shell_path = assert_cmd::cargo::cargo_bin!("brush");
 
     let mut cmd = std::process::Command::new("sh");
+    let home = common::clean_env(&mut cmd)?;
     // The trailing `exit $?` keeps `sh` from optimizing the command into an exec, so brush
     // really runs as a grandchild of the pty session leader. PS1 is set inline since some
     // `sh` implementations drop it from the environment of non-interactive shells.
@@ -108,7 +108,7 @@ fn login_shell_as_grandchild_starts_promptly() -> anyhow::Result<()> {
     cmd.env("BRUSH_BIN", shell_path);
     cmd.env("TERM", "linux");
 
-    let session = spawn_shell(cmd)?;
+    let session = spawn_shell((cmd, home))?;
     expect_responsive_shell(session, /* expect_prompt */ true)
 }
 
@@ -116,15 +116,15 @@ fn login_shell_as_grandchild_starts_promptly() -> anyhow::Result<()> {
 // Helpers
 //
 
-type PtySession = Session<UnixProcess, LogStream<PtyStream, std::io::Stdout>>;
+type PtySession = common::WithHome<Session<UnixProcess, LogStream<PtyStream, std::io::Stdout>>>;
 
 /// Builds a hermetic brush invocation that, unlike the sessions in `interactive_tests.rs`,
 /// leaves the input backend at its default (reedline/crossterm) — the backend real
 /// terminal sessions use.
-fn brush_command(extra_args: &[&str]) -> std::process::Command {
-    let shell_path = assert_cmd::cargo::cargo_bin!("brush");
-
-    let mut cmd = std::process::Command::new(shell_path);
+fn brush_command(
+    extra_args: &[&str],
+) -> std::io::Result<(std::process::Command, tempfile::TempDir)> {
+    let (mut cmd, home) = common::brush_command()?;
     cmd.args([
         "--norc",
         "--noprofile",
@@ -136,10 +136,12 @@ fn brush_command(extra_args: &[&str]) -> std::process::Command {
     cmd.env("PS1", DEFAULT_PROMPT);
     cmd.env("TERM", "linux");
 
-    cmd
+    Ok((cmd, home))
 }
 
-fn spawn_shell(cmd: std::process::Command) -> anyhow::Result<PtySession> {
+fn spawn_shell(
+    (cmd, home): (std::process::Command, tempfile::TempDir),
+) -> anyhow::Result<PtySession> {
     let session = Session::spawn(cmd)?;
     let mut session = expectrl::session::log(session, std::io::stdout())?;
 
@@ -147,7 +149,7 @@ fn spawn_shell(cmd: std::process::Command) -> anyhow::Result<PtySession> {
     // instead of relying on the outer test-harness timeout.
     session.set_expect_timeout(Some(STARTUP_TIMEOUT));
 
-    Ok(session)
+    Ok(common::WithHome::new(session, home))
 }
 
 /// Asserts the shell comes up and responds to input within `STARTUP_TIMEOUT`.

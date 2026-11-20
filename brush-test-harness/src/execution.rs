@@ -33,7 +33,10 @@ impl TestCase {
         shell_config: &ShellConfig,
         working_dir: &assert_fs::TempDir,
     ) -> Result<RunResult> {
-        let test_cmd = self.create_command_for_shell(shell_config, working_dir);
+        // Where the shell keeps its history, outside the working dir (whose contents are
+        // compared), so it's dropped when the run is over.
+        let history_dir = assert_fs::TempDir::new()?;
+        let test_cmd = self.create_command_for_shell(shell_config, working_dir, &history_dir);
 
         let result = if self.pty {
             self.run_command_with_pty(test_cmd)?
@@ -126,6 +129,7 @@ impl TestCase {
         &self,
         shell_config: &ShellConfig,
         working_dir: &assert_fs::TempDir,
+        history_dir: &assert_fs::TempDir,
     ) -> std::process::Command {
         let (mut test_cmd, coverage_target_dir) = match self.invocation {
             ShellInvocation::ExecShellBinary => match &shell_config.which {
@@ -169,6 +173,9 @@ impl TestCase {
         test_cmd.env("RUST_BACKTRACE", "1");
         // Compute a PATH that contains what we need.
         test_cmd.env("PATH", shell_config.compute_test_path_var());
+        // Keep an interactive shell from saving its history to the user's (with HOME unset,
+        // shells fall back to the account's home dir). A test case can set its own.
+        test_cmd.env("HISTFILE", history_dir.path().join("history"));
 
         // Set up any env vars needed for collecting coverage data.
         if let Some(coverage_target_dir) = &coverage_target_dir {

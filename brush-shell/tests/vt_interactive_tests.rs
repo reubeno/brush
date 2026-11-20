@@ -8,6 +8,8 @@
 #![cfg(any(target_os = "linux", target_os = "macos", target_os = "freebsd"))]
 #![allow(clippy::panic_in_result_fn)]
 
+mod common;
+
 use std::time::Duration;
 
 use anyhow::Context;
@@ -35,7 +37,7 @@ fn vt_highlighting_respects_cli_and_config() -> anyhow::Result<()> {
                 |enabled| format!("[ui]\nsyntax-highlighting = {enabled}\n"),
             ),
         )?;
-        let mut cmd = std::process::Command::new(assert_cmd::cargo::cargo_bin!("brush"));
+        let (mut cmd, _home) = common::brush_command()?;
         cmd.args(["--norc", "--noprofile", "--input-backend=vt", "--config"])
             .arg(&config_path)
             .args(&flags)

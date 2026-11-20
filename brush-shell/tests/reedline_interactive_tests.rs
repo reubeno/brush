@@ -23,6 +23,8 @@
 #![cfg(test)]
 #![allow(clippy::panic_in_result_fn)]
 
+mod common;
+
 use std::time::Duration;
 
 use anyhow::Context;
@@ -213,7 +215,7 @@ fn unanswered_cursor_queries_still_yield_a_prompt() -> anyhow::Result<()> {
 // Helpers
 //
 
-type ShellSession = Session<UnixProcess, LogStream<PtyStream, std::io::Stdout>>;
+type ShellSession = common::WithHome<Session<UnixProcess, LogStream<PtyStream, std::io::Stdout>>>;
 
 /// Waits for the cursor-position query that precedes a prompt paint, answers
 /// it, and then waits for the prompt. The first `withhold` queries are left
@@ -242,9 +244,7 @@ fn start_reedline_session() -> anyhow::Result<ShellSession> {
 fn start_reedline_session_with(
     configure: impl FnOnce(&mut std::process::Command),
 ) -> anyhow::Result<ShellSession> {
-    let shell_path = assert_cmd::cargo::cargo_bin!("brush");
-
-    let mut cmd = std::process::Command::new(shell_path);
+    let (mut cmd, home) = common::brush_command()?;
     cmd.args([
         "--norc",
         "--noprofile",
@@ -266,5 +266,5 @@ fn start_reedline_session_with(
     // several in a row when the terminal never answers.
     session.set_expect_timeout(Some(Duration::from_secs(15)));
 
-    Ok(session)
+    Ok(common::WithHome::new(session, home))
 }
