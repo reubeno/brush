@@ -104,6 +104,8 @@ For more, see the examples: [register a builtin written in Rust](brush-clap-adap
 
 Optional crates add bundled [coreutils builtins](brush-coreutils-builtins) and [experimental builtins](brush-experimental-builtins).
 
+Upgrading an embedded crate? See the [crate API migration guides](docs/reference/migrations.md).
+
 ## How we test it
 
 - **Compatibility suite.** More than 2,500 [test cases](brush-shell/tests/cases) run the same script under brush and Bash and compare stdout, stderr, exit status, and filesystem side effects. Every pull request runs them on Linux (x86_64 and aarch64) and macOS, and inside Arch Linux, Debian, Fedora, NixOS, openSUSE, and Azure Linux containers.

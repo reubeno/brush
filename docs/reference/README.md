@@ -7,6 +7,7 @@ These documents serve as reference material for the `brush` project.
 * [zsh-style hooks](zsh-hooks.md)
 * [Integration testing](integration-testing.md)
 * [Minimum Supported Rust Version (MSRV) policy](msrv-policy.md)
+* [Crate API migrations](migrations.md)
 * [Compatibility](compatibility.md)
 * [Examples](examples.md)
 * [Related projects](related-projects.md)

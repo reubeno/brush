@@ -190,7 +190,17 @@ cargo test --test brush-compat-tests -- '<name of test case>'
 
 **Adding new fields to public structs:**
 
-- New optional fields are fine to add as long as the struct implements the Default trait and as long as the defaulted value is a sensible one
+- Adding fields can break exhaustive downstream struct literals or patterns,
+  even if the field is optional and the struct implements `Default`.
+
+**Migration documentation:**
+
+- Whenever changing public API shape, evaluate whether downstream users must
+  change their code. Consult the
+  [breaking-api-change skill](.github/skills/breaking-api-change/SKILL.md) for that
+  assessment and, when migration is required, use its authoring and validation
+  workflow. Include migration guidance in the same contribution, following the
+  [authoring policy](docs/reference/migrations.md#maintaining-guides).
 
 **`#[non_exhaustive]` in `brush-parser`:**
 

@@ -1,10 +1,17 @@
 //! Implements a tokenizer and parsers for POSIX / bash shell syntax.
+//!
+//! See [`docs::migrations`] for guidance on migrating between crate versions.
 
 // TODO(unwrap): remove or scope this allow attribute
 #![allow(clippy::unwrap_used)]
 
 pub mod arithmetic;
 pub mod ast;
+/// Guides for users of this crate.
+pub mod docs {
+    #[doc = include_str!("../migrations/unreleased.md")]
+    pub mod migrations {}
+}
 pub mod pattern;
 pub mod prompt;
 pub mod readline_binding;

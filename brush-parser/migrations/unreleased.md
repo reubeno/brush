@@ -1,0 +1,252 @@
+# API migration: 0.4.0 to unreleased
+
+This transition covers required public API migrations for `brush-parser`.
+For other transitions and version-selection guidance, see the
+[crate migration index](https://github.com/reubeno/brush/blob/main/brush-parser/MIGRATIONS.md).
+
+The baseline is [published 0.4.0](https://docs.rs/brush-parser/0.4.0/brush_parser/).
+
+| Change | Affected consumers |
+|---|---|
+| [Byte offsets](#source-locations-use-byte-offsets) | Source extraction, position construction, diagnostics, editors |
+| [Extended tests](#extended-tests-are-compound-commands) | AST construction, visitors, interpreters |
+| [Brace padding](#numeric-brace-sequences-carry-padding-width) | Brace sequence construction and expansion |
+| [Error matching](#error-enums-are-non-exhaustive) | Exhaustive error matches and interactive continuation |
+
+### Source locations use byte offsets
+
+`brush_parser::SourcePosition::index` and
+`brush_parser::SourcePositionOffset::index` become `byte_offset`.
+`brush_parser::SourceSpan::length()` becomes `len_bytes()`.
+Update field accesses, struct literals, and destructuring patterns.
+
+This is also a unit change: offsets and span lengths now count UTF-8 **bytes**,
+not characters. `SourcePosition::line` remains one-based, and `column` remains a
+one-based character count within the line. Offset line/column values remain
+zero-based. Do not use byte offsets with `chars().skip()` or `chars().take()`.
+If your code already converts parser character indices to byte offsets, remove
+that conversion when consuming `byte_offset`: the value is already in bytes.
+Renaming the field while retaining the conversion would convert it twice.
+
+Before:
+
+```rust,ignore
+let text: String = input.chars()
+    .skip(span.start.index)
+    .take(span.length())
+    .collect();
+```
+
+After:
+
+```rust
+use brush_parser::tokenize_str;
+
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+let input = "echo \u{e9}";
+let tokens = tokenize_str(input)?;
+let span = tokens[1].location();
+let text = input.get(span.start.byte_offset..span.end.byte_offset);
+assert_eq!(text, Some("\u{e9}"));
+assert_eq!(span.len_bytes(), 2);
+assert_eq!(text.map(|s| s.chars().count()), Some(1));
+# Ok(())
+# }
+```
+
+For manually constructed positions, calculate offsets in the original UTF-8
+input rather than copying character counts. Consumers needing UTF-16 editor
+coordinates must convert explicitly; byte offsets are not UTF-16 positions.
+The `diagnostics` conversions from tokens and source positions now use bytes.
+`word::WordPieceWithSource::{start_index, end_index}` have **not** been renamed;
+do not perform an indiscriminate replacement of every field named `index`.
+
+With `serde`, serialized positions/offsets use `byte_offset` rather than `index`.
+Renaming persisted keys alone does not convert old character offsets: recompute
+them from the original source, or reparse that source.
+
+Verify source extraction and diagnostic spans with multibyte text both inside a
+token and before it. ASCII-only examples cannot verify the unit change.
+Source: [#1144](https://github.com/reubeno/brush/pull/1144).
+
+### Extended tests are compound commands
+
+`brush_parser::ast::Command::ExtendedTest` is removed.
+Its expression is now represented by
+`brush_parser::ast::CompoundCommand::ExtendedTest`, inside `Command::Compound`.
+The `ExtendedTestExprCommand` payload is unchanged.
+
+Before, in a constructor or match:
+
+```rust,ignore
+Command::ExtendedTest(expr, redirects)
+```
+
+After:
+
+```rust
+use brush_parser::ast::{
+    Command, CompoundCommand, ExtendedTestExprCommand, RedirectList,
+};
+
+fn extended_test(expr: ExtendedTestExprCommand, redirects: Option<RedirectList>) -> Command {
+    Command::Compound(CompoundCommand::ExtendedTest(expr), redirects)
+}
+```
+
+Remove the old `Command` match arm and add a `CompoundCommand` arm. Redirections
+remain on the **outer** `Command::Compound`; preserve them when transforming or
+executing the command. Visitors must no longer assume that every compound
+command is a block or control-flow construct. Keep AST matches exhaustive so
+future shape changes are visible at compilation.
+
+This also allows an extended test directly as a function body without braces.
+Check ordinary tests, redirected tests, and direct function bodies:
+
+```rust
+use brush_parser::{Parser, ParserOptions};
+use brush_parser::ast::{Command, CompoundCommand};
+
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+let options = ParserOptions::default();
+let mut parser = Parser::new("[[ -n value ]] >out\n".as_bytes(), &options);
+let program = parser.parse_program()?;
+let command = &program.complete_commands[0].0[0].0.first.seq[0];
+assert!(matches!(
+    command,
+    Command::Compound(CompoundCommand::ExtendedTest(_), Some(_))
+));
+let mut parser = Parser::new("f() [[ -n value ]]\n".as_bytes(), &options);
+assert!(parser.parse_program().is_ok());
+# Ok(())
+# }
+```
+
+With `serde`, this changes the serialized AST nesting: the old `ExtendedTest`
+command becomes a `Compound` command containing an `ExtendedTest`. Reparse
+persisted source or explicitly migrate versioned AST data; unchanged
+deserialization is not guaranteed.
+Source: [#1274](https://github.com/reubeno/brush/pull/1274).
+
+### Numeric brace sequences carry padding width
+
+`brush_parser::word::BraceExpressionMember::NumberSequence` gains
+`zero_padded_width: Option<usize>`. Exhaustive field patterns and constructors
+must account for the field.
+
+Before:
+
+```rust,ignore
+BraceExpressionMember::NumberSequence { start, end, increment }
+```
+
+After, when constructing an unpadded sequence:
+
+```rust
+use brush_parser::word::BraceExpressionMember;
+
+let sequence = BraceExpressionMember::NumberSequence {
+    start: 1,
+    end: 3,
+    increment: 1,
+    zero_padded_width: None,
+};
+```
+
+For parsed sequences, custom expanders should bind and honor the width rather
+than adding `..` just to compile. `Some(width)` records padding from the written
+bounds; the numeric values alone cannot distinguish `{01..3}` from `{1..3}`.
+Width includes a sign when present. Format negative values with the minus sign
+before the zero padding, not as a zero-padded string containing a minus sign.
+
+```rust
+use brush_parser::{ParserOptions, word};
+use word::{BraceExpressionMember, BraceExpressionOrText};
+
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+for (input, expected_width) in [
+    ("{1..3}", None),
+    ("{01..3}", Some(2)),
+    ("{-01..3}", Some(3)),
+] {
+    let pieces = word::parse_brace_expansions(input, &ParserOptions::default())?;
+    let Some(pieces) = pieces else {
+        return Err(format!("expected brace expression for {input}").into());
+    };
+    let BraceExpressionOrText::Expr(members) = &pieces[0] else {
+        return Err(format!("expected expression member for {input}").into());
+    };
+    let BraceExpressionMember::NumberSequence { zero_padded_width, .. } = &members[0] else {
+        return Err(format!("expected number sequence for {input}").into());
+    };
+    assert_eq!(*zero_padded_width, expected_width);
+}
+assert_eq!(format!("{:03}", -1), "-01");
+# Ok(())
+# }
+```
+
+Verify your expander's output for padded, unpadded, and negative bounds.
+With `serde`, serialized numeric sequences now include `zero_padded_width`.
+Do not infer a historical padding width from numeric bounds alone; preserve
+unpadded intent with `None`, or reparse original source to recover padding.
+Source: [#1284](https://github.com/reubeno/brush/pull/1284).
+
+### Error enums are non-exhaustive
+
+These exported enums now have `#[non_exhaustive]`:
+
+- `brush_parser::ParseError`
+- `brush_parser::WordParseError`
+- `brush_parser::BindingParseError`
+- `brush_parser::TokenizerError`
+
+Downstream exhaustive matches require a fallback, even if they list all current
+variants. Continue handling the variants you recognize, and propagate or report
+other errors rather than treating them as success.
+
+Before:
+
+```rust,ignore
+match error {
+    BindingParseError::MissingKeyCode => recover_missing_key(),
+    BindingParseError::Unknown(message) => report_unknown(message),
+}
+```
+
+After, for a consumer choosing to recover only missing-key errors:
+
+```rust
+use brush_parser::BindingParseError;
+
+fn recover_missing_key(error: BindingParseError) -> Result<(), BindingParseError> {
+    match error {
+        BindingParseError::MissingKeyCode => Ok(()),
+        other => Err(other),
+    }
+}
+assert!(recover_missing_key(BindingParseError::MissingKeyCode).is_ok());
+assert!(recover_missing_key(BindingParseError::Unknown("bad key".into())).is_err());
+```
+
+`TokenizerError` also adds `MissingHereTagAtEndOfInput` and
+`ExpansionNestingTooDeep`. For interactive continuation, prefer the existing
+`TokenizerError::is_incomplete()` method over maintaining a variant list:
+
+```rust
+use brush_parser::TokenizerError;
+
+assert!(TokenizerError::MissingHereTagAtEndOfInput.is_incomplete());
+assert!(!TokenizerError::ExpansionNestingTooDeep.is_incomplete());
+assert!(!TokenizerError::MissingHereTag(";".into()).is_incomplete());
+```
+
+`MissingHereTagAtEndOfInput` can be completed by supplying a here-document tag.
+`MissingHereTag(String)` instead identifies an operator found where a tag
+belongs. A nesting-limit error is not a request for more input.
+
+Verify fallbacks preserve unknown errors and continuation decisions distinguish
+incomplete input from invalid input. This change applies to error enums, **not**
+the intentionally exhaustive AST enums.
+Sources: [#1705](https://github.com/reubeno/brush/pull/1705),
+[#1416](https://github.com/reubeno/brush/pull/1416).
