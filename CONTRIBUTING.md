@@ -222,6 +222,11 @@ command you would otherwise run by hand.
 
 ### Improving The Documentation
 We appreciate documentation updates as much as code updates! We try to follow the [Diátaxis](https://diataxis.fr/) approach to technical docs. The short version is we recognize the need for tutorials, how-to guides, reference material, and sometimes longer-form explanation docs--*and* we recognize the value of being intentional about organizing by those categories.
+
+Public API changes requiring downstream edits must include migration guidance
+in the same contribution. See the
+[migration authoring guidance](docs/reference/migrations.md#maintaining-guides).
+
 ## Styleguides
 ### Commit Messages
 When you look through our repo history, you'll see commits prefixed with a tag like `feat:` or `fix:`. We follow the [Conventional Commits](https://www.conventionalcommits.org/) specification to maintain consistent readability of commits, both for humans and mechanical release processes.

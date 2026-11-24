@@ -1,0 +1,511 @@
+# API migration: 0.5.0 to unreleased
+
+This transition covers required public API migrations for `brush-core`.
+For other transitions and version-selection guidance, see the
+[crate migration index](https://github.com/reubeno/brush/blob/main/brush-core/MIGRATIONS.md).
+
+The baseline is [published 0.5.0](https://docs.rs/brush-core/0.5.0/brush_core/).
+
+| Migration | Affected consumers |
+|---|---|
+| [Custom builtins](#implementing-and-registering-custom-builtins) | Builtin authors and registry management |
+| [Completion](#configuring-and-calling-completion) | Completion configuration and interactive front ends |
+| [Processes and tasks](#hosting-processes-and-asynchronous-tasks) | Custom shell extensions and execution hosts |
+| [Open files](#supplying-and-cloning-open-files) | Stream injection and descriptor management |
+| [Execution results](#invoking-commands-and-handling-execution-results) | Function callers and custom command execution |
+| [Errors](#matching-and-propagating-errors) | Error matches and task adapters |
+| [Values and settings](#constructing-values-scopes-and-settings) | Array construction, environment lookup, configuration literals |
+| [History timestamps](#constructing-and-formatting-history-timestamps) | History items and time-bounded queries |
+
+The re-exported `SourcePosition`, `SourcePositionOffset`, and `SourceSpan`
+also change. Follow "Source locations use byte offsets" in the parser's
+current transition, linked from its migration index and also rendered in
+[`brush_parser`]'s crate documentation.
+The parser guide covers byte offsets, including serialized positions;
+changing the import to `brush_core` does not avoid that migration.
+
+### Implementing and registering custom builtins
+
+#### Implementations
+
+`brush_core::builtins::{Command, DeclarationCommand, SimpleCommand}` are
+replaced by `ParseArgs` and `Builtin<SE>`. The helpers `builtin`,
+`decl_builtin`, `simple_builtin`, and `raw_arg_builtin` are removed; use
+`Registration::of::<B>()`.
+
+Before, a clap-backed builtin implemented `Command` with an execution method
+generic over extensions, borrowing its parsed arguments:
+
+```rust,ignore
+impl Command for MyBuiltin {
+    type Error = MyError;
+    async fn execute<SE: ShellExtensions>(
+        &self,
+        context: ExecutionContext<'_, SE>,
+    ) -> Result<ExecutionResult, Self::Error> {
+        // ...
+    }
+}
+```
+
+After, implement parsing/help and execution separately. `Builtin<SE>::execute`
+consumes `self`, so move parsed values rather than relying on subsequent uses
+of that invocation. An implementation can target all extension types or just
+the host's own type.
+
+```rust
+use brush_core::{
+    Error, ExecutionContext, ExecutionResult,
+    builtins::{Builtin, ContentOptions, ContentType, Invocation, ParseArgs, Registration, UsageError},
+    extensions::{DefaultShellExtensions, ShellExtensions},
+};
+
+struct NoArgs;
+
+impl ParseArgs for NoArgs {
+    fn content(name: &str, _: ContentType, _: &ContentOptions) -> Result<String, Error> {
+        Ok(format!("{name}: no arguments\n"))
+    }
+
+    fn parse(invocation: Invocation<'_>) -> Result<Self, UsageError> {
+        if invocation.args().is_empty() {
+            Ok(Self)
+        } else {
+            Err(UsageError::new(format!("{}: unexpected arguments", invocation.name())))
+        }
+    }
+}
+
+impl<SE: ShellExtensions> Builtin<SE> for NoArgs {
+    type Error = Error;
+
+    async fn execute(self, _: ExecutionContext<'_, SE>) -> Result<ExecutionResult, Error> {
+        Ok(ExecutionResult::new(0))
+    }
+}
+
+let mut registration = Registration::<DefaultShellExtensions>::of::<NoArgs>();
+assert!(registration.is_enabled());
+assert!(NoArgs::parse(Invocation::new("noargs", ["unexpected"])).is_err());
+registration.set_enabled(false);
+let mut registry = brush_core::builtins::Registry::default();
+registry.register("noargs", registration);
+registry.register_if_absent("noargs", Registration::<DefaultShellExtensions>::of::<NoArgs>());
+assert!(registry.get("noargs").is_some_and(|r| !r.is_enabled()));
+```
+
+`Invocation::name()` is separate from `args()`: those arguments exclude the
+invocation name and retain `CommandArg::Assignment` where applicable.
+`Registration::execute`, in contrast, still accepts arguments starting with
+the name. Preserve this distinction when calling builtins directly.
+
+Clap is no longer a dependency of core's builtin contract. Existing clap-based
+consumers should depend directly on clap and on `brush-clap-adapter`, then use
+its `impl_parse_args!` macro. The adapter's documented forms replace plus-option,
+declaration, and double-dash handling. The old `parse_known`, `try_parse_known`,
+and clap-dependent help facilities are not available from core.
+
+A declaration utility sets `ParseArgs::DECLARATION_ROLE` to
+`DeclarationRole::Utility`, or selects the adapter's declaration form.
+Preserve assignment arguments rather than flattening them indiscriminately:
+this role changes expansion before parsing. `ParseArgs::content` replaces
+`Command::get_content`; parse failures use `UsageError`, not `clap::Error`.
+
+Verify valid/invalid invocations, help, aliases of the same builtin, plus
+options where supported, and declaration operands containing spaces.
+Source: [#1546](https://github.com/reubeno/brush/pull/1546).
+
+#### Registrations and registry access
+
+`Registration` is opaque. Replace direct fields with methods:
+
+| Old access | Replacement |
+|---|---|
+| `disabled` | `is_enabled()` / `set_enabled(enabled)` with inverted polarity |
+| `special_builtin` | `is_special()`; construct with `.special()` |
+| `declaration_builtin` | `declaration_role()`; declare the role on `ParseArgs` |
+| `execute_func` | `execute(context, args)` |
+| `content_func` | `content(name, kind, options)` |
+
+The exported `CommandExecuteFunc` and `CommandContentFunc` aliases are removed.
+There is no public constructor for an arbitrary registration function pointer;
+wrap that behavior in a type implementing `ParseArgs` and `Builtin<SE>`.
+
+The shell's builtin map becomes `builtins::Registry`:
+
+```rust,ignore
+// Before
+shell.register_builtin(name, registration);
+shell.register_builtin_if_unset(name, registration);
+shell.builtin_mut(name);
+
+// After
+shell.builtins_mut().register(name, registration);
+shell.builtins_mut().register_if_absent(name, registration);
+shell.builtins_mut().get_mut(name);
+```
+
+`Shell::builtins()` and `CreateOptions::builtins` now expose/use `Registry`,
+not `HashMap`. Build a registry with `Default` and `register`, or retain the
+shell builder's `.builtin(...)` / `.builtins(...)` methods. `Registry::iter()`
+yields `(&str, &Registration)`, not `(&String, &Registration)`. It lists enabled
+and disabled registrations; test that replacement and disabling preserve your
+intended special/declaration roles.
+Sources: [#1542](https://github.com/reubeno/brush/pull/1542),
+[#1554](https://github.com/reubeno/brush/pull/1554).
+
+### Configuring and calling completion
+
+#### Stored specifications and options
+
+`completion::Config::{default, empty_line, initial_word}` are no longer public
+fields. Use `SpecName::Special` with `SpecialSpec::{Default, EmptyLine,
+InitialWord}`. `Config::{get, set, remove}` take `SpecName`; `iter()` returns
+typed names. For an ordinary command use `SpecName::Command(name)`, or
+`SpecName::parse` when interpreting the special command-name encoding.
+`get_or_add_mut` is removed: explicitly create a `Spec::default()` when absent,
+then retrieve it with `get_mut`.
+
+`GenerationOptions` no longer exposes boolean fields. Use `get`/`set` with
+`CompleteOption`, or collect an iterator of enabled options:
+
+```rust
+use brush_core::completion::{
+    CompleteOption, Config, GenerationOptions, Spec, SpecialSpec, SpecName,
+};
+
+let mut options: GenerationOptions = [CompleteOption::NoSpace].into_iter().collect();
+options.set(CompleteOption::NoSort, true);
+assert!(options.get(CompleteOption::NoSpace));
+let mut config = Config::default();
+config.set(SpecName::Special(SpecialSpec::Default), Spec {
+    options,
+    ..Spec::default()
+});
+assert!(config.get(SpecName::Special(SpecialSpec::Default)).is_some());
+```
+
+`Spec::filter_pattern_excludes` is removed. Store the filter as written in
+`filter_pattern`: matches are excluded normally, while a leading `!` inverts
+that rule unless it starts an extglob pattern. Test both ordinary and inverted
+filters; do not mechanically prepend `!` to every old filter.
+
+`CompleteAction` and `CompleteOption` no longer implement `clap::ValueEnum`.
+For names use their `FromStr` and `Into<&'static str>` implementations; iteration
+uses `strum::IntoEnumIterator`. Consumers using them in clap derives must supply
+appropriate parsing or a local adapter rather than relying on `ValueEnum`.
+`CompleteOption` also gains `FullQuote`, so exhaustive matches must handle that
+variant. It is accepted and listed but does not yet affect quoting; do not
+invent full-quotation behavior when migrating an option dispatcher.
+
+#### Generation entry points and in-progress state
+
+The public `completion::{Context, CompletionToken, CompletionTrigger, Answer}`
+types are removed. `Config::get_completions` is removed; line completion goes
+through `shell.complete(input, cursor).await?`. This async method requires a
+mutable shell and returns `Result<Completions, Error>`. The cursor is a UTF-8
+byte offset at a character boundary. The returned `Completions` still provides
+insertion/deletion byte counts, candidates, and processing options.
+
+`Spec::get_completions(shell, context)` becomes
+`spec.generate(shell, word).await?` for standalone candidate generation. This
+method is also async, takes a mutable shell, and returns
+`Result<Vec<String>, Error>`. This is not a full-context replacement: it does
+not return `Answer`, processing options, or a restart request. Use
+`Shell::complete` when you need interactive context and restart behavior.
+
+```rust
+use brush_core::{Error, Shell, ShellExtensions, completion::{Completions, Spec}};
+
+async fn complete_line<SE: ShellExtensions>(
+    shell: &mut Shell<SE>,
+    input: &str,
+    cursor: usize,
+) -> Result<Completions, Error> {
+    shell.complete(input, cursor).await
+}
+
+async fn generate_candidates<SE: ShellExtensions>(
+    shell: &mut Shell<SE>,
+    spec: &Spec,
+    word: &str,
+) -> Result<Vec<String>, Error> {
+    let candidates = spec.generate(shell, word).await?;
+    Ok(candidates)
+}
+```
+
+`Config::current_completion_options` is removed. During a completion function,
+use `Shell::in_progress_completion()` and
+`in_progress_completion_options_mut()`. These return `None` when no programmable
+completion is active; that absence is not a persistent default spec.
+
+Verify command/default/initial/empty-line selection, in-function option changes,
+replacement ranges after multibyte input, and filter behavior. With `serde`,
+the spec-name storage and option-set representation change; do not assume old
+serialized completion configuration deserializes unchanged.
+Sources: [#1451](https://github.com/reubeno/brush/pull/1451),
+[#1453](https://github.com/reubeno/brush/pull/1453),
+[#1454](https://github.com/reubeno/brush/pull/1454),
+[#1455](https://github.com/reubeno/brush/pull/1455),
+[#1458](https://github.com/reubeno/brush/pull/1458).
+
+### Hosting processes and asynchronous tasks
+
+Custom `extensions::ShellExtensions` implementations must supply
+`ProcessLauncher` and `TaskSpawner` associated types as well as `ErrorFormatter`.
+To retain the default host behavior:
+
+```rust
+use brush_core::extensions::{
+    DefaultErrorFormatter, DefaultProcessLauncher, DefaultTaskSpawner, ShellExtensions,
+};
+
+#[derive(Clone, Default)]
+struct Host;
+impl ShellExtensions for Host {
+    type ErrorFormatter = DefaultErrorFormatter;
+    type ProcessLauncher = DefaultProcessLauncher;
+    type TaskSpawner = DefaultTaskSpawner;
+}
+```
+
+Consumers already using `ShellExtensionsImpl<MyFormatter>` need no new type
+arguments: the launcher/spawner parameters default. Direct `CreateOptions`
+literals must include the added components or use default-based construction.
+
+#### External process composition
+
+`commands::compose_std_command` is replaced by `compose_launch_request`.
+Its program is a resolved `&Path`, its arguments implement `AsRef<str>` rather
+than `AsRef<OsStr>`, and it returns `processes::LaunchRequest`, not
+`Result<std::process::Command, Error>`. Resolve the command before composition,
+then pass the request to `ProcessLauncher::spawn` or `exec`.
+
+Replace the old `empty_env` boolean with `ProgramEnvironment`: `Empty` clears
+the environment, `Exported` preserves exported shell state, and `Command`
+also sets `_` to the resolved program path. Select according to the operation,
+not just the old boolean. `sys::commands`, including its command-extension
+traits, is no longer public; native launch setup belongs to the default launcher.
+
+`ChildProcess::new(child, pid, pgid)` is removed. Use the default launcher for
+native children, or `ChildProcess::from_future` for a host-produced
+`Result<ExecutionResult, std::io::Error>` future. A future-backed child has no
+native PID/process-group ID: it cannot preserve job-control signaling or `$!`.
+Do not present wrapping a native Tokio child in a future as an equivalent
+replacement. Delegate native launches to `DefaultProcessLauncher` where needed.
+
+`ProcessWaitResult::Completed` now contains `ExecutionResult`, not
+`std::process::Output`. Consumers needing captured stdout/stderr must arrange
+streams and capture separately; that data is not in the new wait result.
+`Job::kill` requires `&mut self`, so callers need mutable job access.
+
+#### Task handles
+
+`jobs::JobTask::Internal` and `ExecutionSpawnResult::StartedTask` now contain
+`tasks::TaskHandle<Result<ExecutionResult, Error>>`, not Tokio `JoinHandle`.
+Awaiting a task handle yields an outer core `Error` for task failure; the inner
+result remains the command result. Handle both layers. `TaskHandle` does not
+expose Tokio's abort/ID facilities, and dropping it does not stop the task.
+
+When adapting a running Tokio task, `TaskHandle::from_future` can wrap the join
+future and map a join failure to `ErrorKind::TaskError(Box::new(error))`.
+Constructing a handle around an unstarted future does not itself spawn work:
+custom `TaskSpawner` implementations must start tasks concurrently and implement
+the blocking-work contract too.
+
+Verify native exit/signal statuses, redirected streams, task failures,
+concurrency, and teardown under your host. `kill_external_commands_on_drop`
+defaults to false; explicitly enable it when the host needs child teardown.
+Sources: [#1486](https://github.com/reubeno/brush/pull/1486),
+[#1508](https://github.com/reubeno/brush/pull/1508),
+[#1670](https://github.com/reubeno/brush/pull/1670).
+
+### Supplying and cloning open files
+
+`openfiles::OpenFile` becomes non-exhaustive. Its `File`, `PipeReader`, and
+`PipeWriter` payloads now hold `Arc` handles. Prefer existing `From`
+conversions over constructing those variants:
+
+```rust
+use brush_core::openfiles::OpenFile;
+
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+let (reader, writer) = std::io::pipe()?;
+let file: OpenFile = writer.into();
+let shared = file.clone();
+drop(shared);
+drop(file);
+drop(reader);
+# Ok(())
+# }
+```
+
+`OpenFile::try_clone()` is removed; use `clone()` for shared ownership.
+This does not allocate an independently owned OS descriptor for file/pipe
+variants. Code extracting payloads now receives `Arc`, and exhaustive matches
+need a fallback reporting unsupported variants.
+
+`From<OpenFile> for std::process::Stdio` is removed. Prefer `LaunchRequest`
+with its open-file map and the default launcher. If explicitly creating native
+stdio on Unix, use the public `try_borrow_as_fd()` then duplicate the borrowed
+descriptor with `try_clone_to_owned()` and handle errors. The similarly named
+`OpenFile::try_clone_to_owned` helper is crate-private.
+
+Verify injected stdin/stdout/stderr, pipe EOF after all writers are dropped,
+and independent descriptor ownership where required.
+Sources: [#1181](https://github.com/reubeno/brush/pull/1181),
+[#1525](https://github.com/reubeno/brush/pull/1525),
+[#1542](https://github.com/reubeno/brush/pull/1542).
+
+### Invoking commands and handling execution results
+
+`Shell::invoke_function` now takes owned `ExecutionParameters` and returns
+`Result<ExecutionResult, Error>` instead of `Result<u8, Error>`.
+
+```rust,ignore
+// Before
+let status = shell.invoke_function(name, args, &params).await?;
+
+// After
+let result = shell.invoke_function(name, args, params.clone()).await?;
+let status: u8 = result.exit_code.into();
+// Inspect result.next_control_flow before deciding to continue execution.
+```
+
+Move `params` when no longer needed; clone only when preserving it for subsequent
+use. Do not reduce the result to a status if your host must honor `ExitShell`
+or other control flow. `ExecutionResult` is now `#[must_use]`; inspect it, or
+explicitly discard it only where your boundary intentionally ignores it.
+
+`commands::SimpleCommand::post_execute` is removed. Put required post-command
+work after execution in the calling code, including its error path when needed.
+There is no equivalent registration hook that runs automatically.
+`SimpleCommand::new` accepts an argument iterator now, but is no longer `const`;
+existing ordinary `Vec<CommandArg>` calls remain supported.
+
+Verify function exit status and exit control flow separately, and check cleanup
+on both success and error.
+Sources: [#1354](https://github.com/reubeno/brush/pull/1354),
+[#1516](https://github.com/reubeno/brush/pull/1516),
+[#1552](https://github.com/reubeno/brush/pull/1552).
+
+### Matching and propagating errors
+
+`error::ErrorKind` becomes non-exhaustive. Retain handling of recognized cases
+and propagate/report others rather than making them success-shaped fallbacks.
+The private storage of `Error` becomes boxed, but `kind()` still returns
+`&ErrorKind`; ordinary callers need no boxing changes. `kind()` is no longer
+`const`, so it cannot be called in const evaluation.
+
+`ErrorKind::ThreadingError(tokio::task::JoinError)` is replaced by
+`TaskError(Box<dyn std::error::Error + Send + Sync>)`; the old automatic
+conversion from `JoinError` is removed. A task adapter can map it explicitly:
+
+```rust
+use brush_core::{Error, ErrorKind};
+
+fn task_error(error: tokio::task::JoinError) -> Error {
+    ErrorKind::TaskError(Box::new(error)).into()
+}
+```
+
+`ErrorKind::UnimplementedAndTracked` and `error::unimp_with_issue` are removed.
+Use `ErrorKind::Unimplemented` or `error::unimp` for the failure, keeping issue
+references in documentation rather than expecting them in the error variant.
+
+`Error::{to_control_flow, into_result}` become crate-private. There is no direct
+public replacement for their shell-dependent policy: return the error through
+the execution API instead of reproducing that policy in builtin code. A host
+choosing its own recovery can obtain an exit code through the existing
+conversion, but a numeric code is not a replacement for control-flow handling.
+New error variants are covered by the non-exhaustive fallback.
+
+Verify task errors retain their source, and unknown error kinds remain visible.
+Sources: [#1497](https://github.com/reubeno/brush/pull/1497),
+[#1486](https://github.com/reubeno/brush/pull/1486),
+[#1542](https://github.com/reubeno/brush/pull/1542).
+
+### Constructing values, scopes, and settings
+
+`variables::ArrayLiteral` no longer exposes its tuple field. Replace
+`ArrayLiteral(elements)` with `ArrayLiteral::new(elements)`. There is no public
+`.0` accessor: retain input elements separately if you need to inspect or edit
+them before assigning, rather than destructuring the resulting literal.
+
+```rust
+use brush_core::variables::{ArrayLiteral, ShellValueLiteral};
+
+let array = ArrayLiteral::new(vec![(None, "value".to_owned())]);
+let value = ShellValueLiteral::Array(array);
+```
+
+`ShellValueLiteral` becomes non-exhaustive; add a reporting/propagating fallback
+to downstream matches. This change does not make every variable or AST enum
+non-exhaustive.
+
+`env::EnvironmentLookup::OnlyInCurrentLocal` becomes
+`OnlyInCurrent(EnvironmentScope::Local)`:
+
+```rust
+use brush_core::env::{EnvironmentLookup, EnvironmentScope};
+
+let lookup = EnvironmentLookup::OnlyInCurrent(EnvironmentScope::Local);
+```
+
+It still selects the innermost local scope, not the innermost scope of any type.
+Update enum matches as well as call arguments.
+
+Exhaustive configuration literals also need edits:
+
+| Type | Added/changed fields |
+|---|---|
+| `CreateOptions` | `builtins: Registry`, `process_launcher`, `task_spawner`, `kill_external_commands_on_drop` |
+| `options::RuntimeOptions` | `kill_external_commands_on_drop` |
+| `terminal::Settings` | `raw_input` |
+
+Use `Shell::builder()` or defaults with explicit overrides where practical.
+Preserve false for the new teardown/raw-mode options when retaining prior
+behavior. With `serde`, persisted runtime settings gain the teardown field;
+do not assume older serialized settings or shell snapshots restore unchanged.
+
+Verify keyed/unkeyed array assignment, lookup with nested local scopes, and
+terminal/child behavior under your selected settings.
+Sources: [#1456](https://github.com/reubeno/brush/pull/1456),
+[#1542](https://github.com/reubeno/brush/pull/1542),
+[#1491](https://github.com/reubeno/brush/pull/1491).
+
+### Constructing and formatting history timestamps
+
+`history::ItemTimestamp` is no longer an alias for `chrono::DateTime<Utc>`.
+It is an opaque brush-owned timestamp, including in `history::Item::timestamp`
+and the time bounds on `history::Query`. Replace `chrono::Utc::now()` with
+`ItemTimestamp::now()` when populating those fields.
+
+Replace chrono-specific constructors and accessors with
+`ItemTimestamp::from_system_time` and `to_system_time`. Both conversions return
+`Option` and preserve subsecond precision: construction is limited to years
+-9999 through 9999, and conversion back depends on the platform's `SystemTime`
+range. If retaining chrono in your application, convert through `SystemTime`
+at the brush boundary rather than assigning a chrono value directly.
+
+```rust
+use brush_core::history::{Item, ItemTimestamp};
+use std::time::{Duration, UNIX_EPOCH};
+
+let time = UNIX_EPOCH + Duration::new(1_700_000_000, 123_456_789);
+let timestamp = ItemTimestamp::from_system_time(time)
+    .ok_or("time outside the history timestamp range")?;
+assert_eq!(timestamp.to_system_time(), Some(time));
+
+let mut item = Item::new("echo hello");
+item.timestamp = Some(timestamp);
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+For display, replace chrono formatting calls with
+`timestamp.format_local("%Y-%m-%d %H:%M:%S")` only when system-local time is
+intended. This is not a UTC or arbitrary-time-zone formatting replacement;
+convert through `SystemTime` for those needs. Verify timestamp round trips and
+the intended display time zone.
+Source: [#1751](https://github.com/reubeno/brush/pull/1751).

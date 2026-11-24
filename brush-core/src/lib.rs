@@ -1,5 +1,7 @@
 //! Core implementation of the brush shell. Implements the shell's abstraction, its interpreter, and
 //! various facilities used internally by the shell.
+//!
+//! See [`docs::migrations`] for guidance on migrating between crate versions.
 
 pub mod arithmetic;
 mod braceexpansion;
@@ -7,6 +9,11 @@ pub mod builtins;
 pub mod callstack;
 pub mod commands;
 pub mod completion;
+/// Guides for users of this crate.
+pub mod docs {
+    #[doc = include_str!("../migrations/unreleased.md")]
+    pub mod migrations {}
+}
 pub mod env;
 pub mod error;
 pub mod escape;
