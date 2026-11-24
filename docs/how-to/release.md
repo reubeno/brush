@@ -5,7 +5,7 @@ _(This is only relevant for project maintainers.)_
 * Install [release-plz](https://github.com/MarcoIeni/release-plz)
 * Checkout the `main` branch (with a clean working tree).
 * Refresh the compatibility-test count badge in `README.md` if it has drifted (round down to the nearest hundred; count `- name:` entries under `brush-shell/tests/cases/compat`).
-* Run: `release-plz update`. Review its changes, notable including the changelog updates.
+* Run: `release-plz update`. Review its changes, notably including the changelog updates.
 * Review each crate against its own published baseline. Add required API migration guidance and [finalize the guides manually](../reference/migrations.md#finalizing-a-guide-for-release) after reviewing the selected versions. Release-plz does not update guide paths or rustdoc wiring.
 * Run the [guide checks](../reference/migrations.md#validating-guides), semver checks against published library versions, candidate package verification and `cargo xtask ci full`. Report incomplete review and failed checks rather than treating the release as ready.
 * PR through any generated changes with a `chore: prepare release` commit summary.

@@ -202,15 +202,38 @@ invent full-quotation behavior when migrating an option dispatcher.
 
 The public `completion::{Context, CompletionToken, CompletionTrigger, Answer}`
 types are removed. `Config::get_completions` is removed; line completion goes
-through `Shell::complete(input, cursor)`. The cursor is a UTF-8 byte offset at a
-character boundary. The returned `Completions` still provides insertion/deletion
-byte counts, candidates, and processing options.
+through `shell.complete(input, cursor).await?`. This async method requires a
+mutable shell and returns `Result<Completions, Error>`. The cursor is a UTF-8
+byte offset at a character boundary. The returned `Completions` still provides
+insertion/deletion byte counts, candidates, and processing options.
 
 `Spec::get_completions(shell, context)` becomes
-`Spec::generate(shell, word) -> Result<Vec<String>, Error>` for standalone
-candidate generation. This is not a full-context replacement: it does not
-return `Answer`, processing options, or a restart request. Use `Shell::complete`
-when you need interactive context and restart behavior.
+`spec.generate(shell, word).await?` for standalone candidate generation. This
+method is also async, takes a mutable shell, and returns
+`Result<Vec<String>, Error>`. This is not a full-context replacement: it does
+not return `Answer`, processing options, or a restart request. Use
+`Shell::complete` when you need interactive context and restart behavior.
+
+```rust
+use brush_core::{Error, Shell, ShellExtensions, completion::{Completions, Spec}};
+
+async fn complete_line<SE: ShellExtensions>(
+    shell: &mut Shell<SE>,
+    input: &str,
+    cursor: usize,
+) -> Result<Completions, Error> {
+    shell.complete(input, cursor).await
+}
+
+async fn generate_candidates<SE: ShellExtensions>(
+    shell: &mut Shell<SE>,
+    spec: &Spec,
+    word: &str,
+) -> Result<Vec<String>, Error> {
+    let candidates = spec.generate(shell, word).await?;
+    Ok(candidates)
+}
+```
 
 `Config::current_completion_options` is removed. During a completion function,
 use `Shell::in_progress_completion()` and
