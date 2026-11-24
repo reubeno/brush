@@ -1,7 +1,7 @@
 [package]
 name = "brush-shell"
 description = "Rust-implemented shell focused on POSIX and bash compatibility"
-version = "0.4.0"
+version = "0.5.0"
 authors.workspace = true
 categories.workspace = true
 edition.workspace = true
@@ -94,12 +94,12 @@ schema = ["dep:schemars"]
 workspace = true
 
 [dependencies]
-brush-core = { version = "^0.5.0", path = "../brush-core" }
+brush-core = { version = "^0.6.0", path = "../brush-core" }
 brush-winnow-args-adapter = { version = "^0.1.0", path = "../brush-winnow-args-adapter" }
-brush-builtins = { version = "^0.2.0", path = "../brush-builtins" }
-brush-interactive = { version = "^0.4.0", path = "../brush-interactive" }
-brush-coreutils-builtins = { version = "^0.1.0", path = "../brush-coreutils-builtins", optional = true }
-brush-experimental-builtins = { version = "^0.1.0", path = "../brush-experimental-builtins", optional = true }
+brush-builtins = { version = "^0.3.0", path = "../brush-builtins" }
+brush-interactive = { version = "^0.5.0", path = "../brush-interactive" }
+brush-coreutils-builtins = { version = "^0.2.0", path = "../brush-coreutils-builtins", optional = true }
+brush-experimental-builtins = { version = "^0.2.0", path = "../brush-experimental-builtins", optional = true }
 color-print = "0.3.7"
 etcetera = "0.11.0"
 schemars = { version = "1.2.1", optional = true }
@@ -133,7 +133,7 @@ tempfile = "3.27.0"
 # Also a regular optional dependency, enabled by `experimental-load`. The `gen`
 # example needs it without that feature, so it's listed here too.
 serde_json = "1.0.149"
-brush-parser = { version = "^0.4.0", path = "../brush-parser" }
+brush-parser = { version = "^0.5.0", path = "../brush-parser" }
 brush-test-harness = { path = "../brush-test-harness", features = ["insta"] }
 assert_cmd = "2.2.0"
 assert_fs = "1.1.3"

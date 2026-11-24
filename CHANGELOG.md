@@ -5,6 +5,323 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2026-11-24
+
+### 🚀 Features
+
+- *(expansion)* Closures instead of dedicated functions for transforms
+- *(core)* Add opt-in kill-on-drop for externally spawned commands ([#1244](https://github.com/reubeno/brush/pull/1244))
+- *(core)* Set a builtin's state from outside the shell ([#1545](https://github.com/reubeno/brush/pull/1545))
+- *(core)* Source an already parsed program ([#1648](https://github.com/reubeno/brush/pull/1648))
+- *(core)* [**breaking**] Let a host start the shell's tasks through ShellExtensions ([#1670](https://github.com/reubeno/brush/pull/1670))
+- *(builtins)* Implement declare/local -I; honor += in declarations ([#1306](https://github.com/reubeno/brush/pull/1306))
+- *(install)* Add curl-able install script for release binaries ([#1375](https://github.com/reubeno/brush/pull/1375))
+- Implement kill -0 ([#1367](https://github.com/reubeno/brush/pull/1367))
+- *(interactive)* Iterate on zsh-style hooks ([#1363](https://github.com/reubeno/brush/pull/1363))
+- Improve IFS support ([#988](https://github.com/reubeno/brush/pull/988))
+- *(core)* Run pipelines, cmdsubst, and heredocs on wasm ([#1489](https://github.com/reubeno/brush/pull/1489))
+- *(shell)* [**breaking**] Make the default features build for every target ([#1501](https://github.com/reubeno/brush/pull/1501))
+- *(core)* [**breaking**] Let a host launch the shell's processes through ShellExtensions ([#1508](https://github.com/reubeno/brush/pull/1508))
+- Add syntax highlighting to the VT input backend ([#1530](https://github.com/reubeno/brush/pull/1530))
+- *(core)* Mechanism for shell to store builtin state; use in getopts ([#1544](https://github.com/reubeno/brush/pull/1544))
+- *(shell)* [**breaking**] Parse brush's command line with winnow-args ([#1635](https://github.com/reubeno/brush/pull/1635))
+- *(builtins)* Parse ulimit and history with winnow-args ([#1639](https://github.com/reubeno/brush/pull/1639))
+- *(builtins)* Parse complete, compgen and compopt with winnow-args ([#1656](https://github.com/reubeno/brush/pull/1656))
+- *(builtins)* Parse the simple builtins' arguments with winnow-args ([#1657](https://github.com/reubeno/brush/pull/1657))
+- *(builtins)* Parse printf, read, mapfile, bind, builtin and command with winnow-args ([#1654](https://github.com/reubeno/brush/pull/1654))
+- *(prompt)* Support the `\#` command number escape ([#1680](https://github.com/reubeno/brush/pull/1680))
+
+### 🐛 Bug Fixes
+
+- Wrong end token for if_clause ([#1218](https://github.com/reubeno/brush/pull/1218))
+- *(parser)* Stop runs of '{' taking exponential time in brace expansion ([#1714](https://github.com/reubeno/brush/pull/1714))
+- Build issues
+- *(core)* Notice a child that stops before the shell starts waiting ([#1481](https://github.com/reubeno/brush/pull/1481))
+- *(windows)* Resolve PATHEXT at the end of a path treated as command ([#1492](https://github.com/reubeno/brush/pull/1492))
+- *(core)* Poll a socket for input rather than taking it as ready ([#1531](https://github.com/reubeno/brush/pull/1531))
+- *(core)* Fail writes to a wasm pipe once its readers are gone ([#1671](https://github.com/reubeno/brush/pull/1671))
+- *(parser)* [**breaking**] Track byte offsets instead of char counts in source locations ([#1144](https://github.com/reubeno/brush/pull/1144))
+- Retain terminal control during interactive sessions ([#1138](https://github.com/reubeno/brush/pull/1138))
+- *(prompt)* Apply double-quote escape rules in prompt expansion ([#1167](https://github.com/reubeno/brush/pull/1167))
+- *(openfiles)* Share descriptors across cloned shell contexts ([#1181](https://github.com/reubeno/brush/pull/1181))
+- *(core)* Resolve stdio dev paths through shell fds ([#1188](https://github.com/reubeno/brush/pull/1188))
+- *(expansion)* Join $*/${a[*]} via IFS first char in scalar contexts ([#1197](https://github.com/reubeno/brush/pull/1197))
+- *(expansion)* Honor IFS when joining fields in more scalar contexts ([#1200](https://github.com/reubeno/brush/pull/1200))
+- Build issues on some BSD-ish platforms + add CI checks ([#1198](https://github.com/reubeno/brush/pull/1198))
+- *(printf)* Parse attached -v value and avoid infinite loop ([#1207](https://github.com/reubeno/brush/pull/1207))
+- *(kill)* Support numeric signal in -sigspec syntax ([#1209](https://github.com/reubeno/brush/pull/1209))
+- *(parser)* Match bash newline handling in [[ ]] conditionals ([#1208](https://github.com/reubeno/brush/pull/1208))
+- *(arrays)* Evaluate subscript on non-assoc array assignment ([#1210](https://github.com/reubeno/brush/pull/1210))
+- *(expansion)* Treat empty array as unset in +/- conditionals ([#1217](https://github.com/reubeno/brush/pull/1217))
+- *(vars)* Populate BASH_ARGV/BASH_ARGC without extdebug ([#1222](https://github.com/reubeno/brush/pull/1222))
+- Trailing path filters glob results ([#1153](https://github.com/reubeno/brush/pull/1153))
+- *(export)* Honor += append in parsed assignments
+- *(cd)* Remove unsupported `no-clearly-defined` option from about.toml ([#1229](https://github.com/reubeno/brush/pull/1229))
+- *(help)* Return non-zero exit status when no help topics match ([#1237](https://github.com/reubeno/brush/pull/1237))
+- *(status)* Don't let PS4 expansion clobber assignment exit status ([#1248](https://github.com/reubeno/brush/pull/1248))
+- *(input)* Accumulate multi-line input when stdin isn't a terminal ([#1249](https://github.com/reubeno/brush/pull/1249))
+- *(parser)* Recognize a comment after an odd number of blanks ([#1253](https://github.com/reubeno/brush/pull/1253))
+- *(parser)* Accept [[ ... ]] as a brace-less function body ([#1274](https://github.com/reubeno/brush/pull/1274))
+- *(expansion)* Keep the leading zeros in a numeric brace sequence ([#1284](https://github.com/reubeno/brush/pull/1284))
+- *(builtins)* Enumerate aliases and functions in sorted order
+- *(interp)* Expand alias bodies instead of splitting them on whitespace
+- *(completion)* Filter functions by prefix for the command action
+- *(parser)* Decline out-of-range numeric values instead of unwrapping ([#1271](https://github.com/reubeno/brush/pull/1271))
+- *(expansion)* Read a negative substring length as an offset from the end ([#1283](https://github.com/reubeno/brush/pull/1283))
+- *(completion)* Only fall back to -o dirnames when nothing matched ([#1324](https://github.com/reubeno/brush/pull/1324))
+- *(builtins)* Improve printf %q and %Q compatibility ([#1323](https://github.com/reubeno/brush/pull/1323))
+- *(vars)* Give EPOCHREALTIME fixed six-digit microsecond precision ([#1327](https://github.com/reubeno/brush/pull/1327))
+- *(builtins)* Decode multi-byte UTF-8 in read ([#1326](https://github.com/reubeno/brush/pull/1326))
+- *(history)* Load HISTFILE after startup files and ignore an empty one ([#1325](https://github.com/reubeno/brush/pull/1325))
+- *(interactive)* Handle Signal::HostCommand so bind -x keys don't kill the shell ([#1330](https://github.com/reubeno/brush/pull/1330))
+- *(builtins)* Apply attribute flags with declare -f ([#1335](https://github.com/reubeno/brush/pull/1335))
+- *(builtins)* Iterate all operands for command -v/-V ([#1339](https://github.com/reubeno/brush/pull/1339))
+- Improve compatibility of re-formatting ([#1340](https://github.com/reubeno/brush/pull/1340))
+- *(builtins)* Refuse to hash a directory ([#1341](https://github.com/reubeno/brush/pull/1341))
+- Escaping-related compatibility fixes ([#1342](https://github.com/reubeno/brush/pull/1342))
+- *(shell)* Match bash when a PATH entry isn't a runnable executable ([#1343](https://github.com/reubeno/brush/pull/1343))
+- *(builtins)* Match bash's type output for aliases, misses, and PATH ([#1347](https://github.com/reubeno/brush/pull/1347))
+- *(builtins)* Resolve command -v/-V the way the shell resolves a name ([#1348](https://github.com/reubeno/brush/pull/1348))
+- *(regex)* Anchor ^ and $ to the whole string in [[ =~ ]] ([#1349](https://github.com/reubeno/brush/pull/1349))
+- *(interactive)* Retry read_line when the cursor-position query times out ([#1331](https://github.com/reubeno/brush/pull/1331))
+- *(shell)* Treat `-s` with positional args as an interactive shell ([#1356](https://github.com/reubeno/brush/pull/1356))
+- *(PROMPT_COMMAND)* Address compat issues ([#1357](https://github.com/reubeno/brush/pull/1357))
+- *(parser)* Correct bracket expression edge cases ([#1360](https://github.com/reubeno/brush/pull/1360))
+- *(expansion)* Keep empty fields when IFS delimiters repeat ([#1282](https://github.com/reubeno/brush/pull/1282))
+- *(shell)* Consume `--` as the end-of-options marker ([#1384](https://github.com/reubeno/brush/pull/1384))
+- *(cmdline)* Take -c's command string from the first operand ([#1398](https://github.com/reubeno/brush/pull/1398))
+- *(completion)* Filter `compgen -A function` by the word being completed ([#1400](https://github.com/reubeno/brush/pull/1400))
+- *(parser)* Find the end of `$(...)` in words using the tokenizer ([#1407](https://github.com/reubeno/brush/pull/1407))
+- *(parser)* Accept ;; in the header of an arithmetic for loop ([#1418](https://github.com/reubeno/brush/pull/1418))
+- Improve tokenizer handling of here-docs and nested expansions ([#1416](https://github.com/reubeno/brush/pull/1416))
+- Correctness fixes for line continuation in the tokenizer ([#1421](https://github.com/reubeno/brush/pull/1421))
+- *(parser)* Make unquote_str follow shell quote removal ([#1434](https://github.com/reubeno/brush/pull/1434))
+- *(completion)* List -A command results in bash's order ([#1437](https://github.com/reubeno/brush/pull/1437))
+- *(completion)* Support compopt +o ([#1440](https://github.com/reubeno/brush/pull/1440))
+- *(completion)* [**breaking**] Interpret complete -X's leading ! when completing ([#1441](https://github.com/reubeno/brush/pull/1441))
+- *(completion)* Let compopt +o win over -o for the same option ([#1448](https://github.com/reubeno/brush/pull/1448))
+- Quote words starting with # or ~ when quoting for the shell ([#1449](https://github.com/reubeno/brush/pull/1449))
+- *(completion)* Make compopt fail for a missing completion spec ([#1442](https://github.com/reubeno/brush/pull/1442))
+- *(completion)* List and look up the special specs in complete -p ([#1444](https://github.com/reubeno/brush/pull/1444))
+- *(completion)* Format complete -p output like bash ([#1443](https://github.com/reubeno/brush/pull/1443))
+- *(completion)* [**breaking**] Track the in-progress completion on the shell ([#1451](https://github.com/reubeno/brush/pull/1451))
+- *(core)* [**breaking**] Give a command's prefix assignments their own variables ([#1456](https://github.com/reubeno/brush/pull/1456))
+- *(core)* [**breaking**] Leave function calls, scripts, and scopes when cancelled ([#1457](https://github.com/reubeno/brush/pull/1457))
+- *(completion)* [**breaking**] Better align completion word splitting with bash ([#1458](https://github.com/reubeno/brush/pull/1458))
+- *(history)* Honor HISTCONTROL in interactive shells ([#1465](https://github.com/reubeno/brush/pull/1465))
+- *(completion)* Close -W's open quotes; make -f/-d results file names ([#1459](https://github.com/reubeno/brush/pull/1459))
+- *(interactive)* Give completion the whole line with reedline ([#1473](https://github.com/reubeno/brush/pull/1473))
+- *(interp)* Run function pipeline stages as background tasks, not inline ([#1276](https://github.com/reubeno/brush/pull/1276))
+- *(pipeline)* Run compound command stages concurrently ([#1411](https://github.com/reubeno/brush/pull/1411))
+- *(core)* Have a process's wait report only its own stop ([#1499](https://github.com/reubeno/brush/pull/1499))
+- *(shell)* Include outer script in BASH_SOURCE ([#1500](https://github.com/reubeno/brush/pull/1500))
+- *(core)* [**breaking**] Continue and signal a job's whole process group ([#1504](https://github.com/reubeno/brush/pull/1504))
+- *(test-harness)* Decode pty transcripts once, and keep pty exit codes ([#1506](https://github.com/reubeno/brush/pull/1506))
+- *(core)* Compat fixes for stream defaults ([#1515](https://github.com/reubeno/brush/pull/1515))
+- *(core)* [**breaking**] Compat fixes for $_ ([#1516](https://github.com/reubeno/brush/pull/1516))
+- *(core)* [**breaking**] Give a process the shell's stdin as any of its standard streams ([#1525](https://github.com/reubeno/brush/pull/1525))
+- *(core)* Take a path on wasm as executable only if it exists ([#1533](https://github.com/reubeno/brush/pull/1533))
+- *(builtins)* Ignore operands passed to times ([#1535](https://github.com/reubeno/brush/pull/1535))
+- *(core)* Take a path on wasm as readable or writable only if it exists ([#1543](https://github.com/reubeno/brush/pull/1543))
+- *(builtins)* End a declaration utility's options at its first operand ([#1550](https://github.com/reubeno/brush/pull/1550))
+- *(builtins)* [**breaking**] Print a spec's options from compopt with no options ([#1553](https://github.com/reubeno/brush/pull/1553))
+- *(core)* End only the subshell on an error or exit in it ([#1538](https://github.com/reubeno/brush/pull/1538))
+- *(core)* Keep `$` in a pattern substitution's replacement literal ([#1557](https://github.com/reubeno/brush/pull/1557))
+- *(core)* Mark ExecutionResult must_use and keep the statuses it caught ([#1552](https://github.com/reubeno/brush/pull/1552))
+- *(builtins)* Report a declaration's invalid name as bash does ([#1563](https://github.com/reubeno/brush/pull/1563))
+- *(builtins)* Provide printf under WASI ([#1567](https://github.com/reubeno/brush/pull/1567))
+- *(core)* Count a negative subscript from the highest index ([#1572](https://github.com/reubeno/brush/pull/1572))
+- *(core)* Expand "${a[@]+x}" of an empty array to no words ([#1571](https://github.com/reubeno/brush/pull/1571))
+- *(builtins)* Print a builtin's --help on standard output ([#1562](https://github.com/reubeno/brush/pull/1562))
+- *(expansion)* Treat a dot after empty quotes as the leading dot in globs ([#1601](https://github.com/reubeno/brush/pull/1601))
+- *(expansion)* Drop escaping backslashes in literal glob components ([#1607](https://github.com/reubeno/brush/pull/1607))
+- *(expansion)* Don't panic on brace sequence increments that overflow ([#1512](https://github.com/reubeno/brush/pull/1512))
+- *(builtins)* Check export's names, and take an expanded assignment ([#1564](https://github.com/reubeno/brush/pull/1564))
+- *(builtins)* Fail unset -f -v with bash's message and status ([#1612](https://github.com/reubeno/brush/pull/1612))
+- *(parser)* Treat an unquoted unary operator in [[ ]] as unary ([#1616](https://github.com/reubeno/brush/pull/1616))
+- *(parser)* Read `( (` and `) )` as nested subshells, not arithmetic ([#1614](https://github.com/reubeno/brush/pull/1614))
+- *(parser)* Read an unquoted unary operator in [[ ]] as the operator
+- *(expansion)* Leave ~- alone when OLDPWD has no value ([#1599](https://github.com/reubeno/brush/pull/1599))
+- *(builtins)* Accept repeated echo options and let the last of -e/-E win ([#1598](https://github.com/reubeno/brush/pull/1598))
+- *(builtins)* Color and wrap winnow-args builtins' help as clap's was ([#1634](https://github.com/reubeno/brush/pull/1634))
+- *(builtins)* Filter `declare -pt` by the trace attribute ([#1637](https://github.com/reubeno/brush/pull/1637))
+- *(builtins)* Reject a timeout read can't wait for instead of panicking ([#1652](https://github.com/reubeno/brush/pull/1652))
+- *(builtins)* Accept set -r and list the options on set -o '' ([#1655](https://github.com/reubeno/brush/pull/1655))
+- *(builtins)* Fg reports a missing job on stderr ([#1661](https://github.com/reubeno/brush/pull/1661))
+- *(shell)* Brush --help ends without a blank line ([#1649](https://github.com/reubeno/brush/pull/1649))
+- *(core)* Run command substitutions on a blocking thread ([#1643](https://github.com/reubeno/brush/pull/1643))
+- *(core)* Wrap around on overflow when appending to an integer ([#1673](https://github.com/reubeno/brush/pull/1673))
+- *(builtins)* Swap the top two directories on pushd with no directory ([#1674](https://github.com/reubeno/brush/pull/1674))
+- *(arith)* Evaluate a whitespace-only expression as 0 ([#1676](https://github.com/reubeno/brush/pull/1676))
+- *(winnow-args-adapter)* Read `+x` as an operand of builtins without plus options ([#1677](https://github.com/reubeno/brush/pull/1677))
+- *(builtins)* Ignore operands to pwd ([#1682](https://github.com/reubeno/brush/pull/1682))
+- *(builtins)* Fail test with status 2 when an arithmetic operand isn't an integer ([#1686](https://github.com/reubeno/brush/pull/1686))
+- *(builtins)* List only enabled builtins from enable unless -a is given ([#1690](https://github.com/reubeno/brush/pull/1690))
+- *(builtins)* Fail with status 1 from let with no expressions ([#1697](https://github.com/reubeno/brush/pull/1697))
+- *(builtins)* Fail with status 1 from umask with an out-of-range mode ([#1698](https://github.com/reubeno/brush/pull/1698))
+- *(builtins)* Look up every signal given to kill -l, and exit statuses above 128 ([#1691](https://github.com/reubeno/brush/pull/1691))
+- *(builtins)* Fail with status 1 from shopt given both -s and -u ([#1700](https://github.com/reubeno/brush/pull/1700))
+- *(builtins)* Reject options to builtin and take -- and --help ([#1683](https://github.com/reubeno/brush/pull/1683))
+- *(builtins)* Fail with status 1 from ulimit given an invalid number ([#1702](https://github.com/reubeno/brush/pull/1702))
+- *(builtins)* Fail with status 1 from hash -d or -t with no names ([#1701](https://github.com/reubeno/brush/pull/1701))
+- *(builtins)* Support symbolic modes in umask ([#1703](https://github.com/reubeno/brush/pull/1703))
+- *(builtins)* Fail with a usage error from unalias with no names ([#1696](https://github.com/reubeno/brush/pull/1696))
+- *(arith)* Reject assignment to something that isn't a variable ([#1681](https://github.com/reubeno/brush/pull/1681))
+- *(builtins)* List aliases as bash does in POSIX mode and for names starting with - ([#1709](https://github.com/reubeno/brush/pull/1709))
+- *(vars)* Refuse element writes to a readonly array ([#1678](https://github.com/reubeno/brush/pull/1678))
+- *(prompt)* Report a prompt that fails to expand, rather than failing ([#1707](https://github.com/reubeno/brush/pull/1707))
+- *(builtins)* List the whole history from `history N` when N is past its size ([#1716](https://github.com/reubeno/brush/pull/1716))
+- *(builtins)* Read caller's frame number as a signed number ([#1720](https://github.com/reubeno/brush/pull/1720))
+- *(builtins)* Report the pipe size from pathconf in `ulimit -p` ([#1722](https://github.com/reubeno/brush/pull/1722))
+- *(core)* Shorten a path to ~ only at a component boundary ([#1723](https://github.com/reubeno/brush/pull/1723))
+- *(builtins)* Reject a ulimit limit too large for its unit ([#1719](https://github.com/reubeno/brush/pull/1719))
+- Support Bash-compatible `export -a` ([#1628](https://github.com/reubeno/brush/pull/1628))
+- *(builtins)* Don't overflow on fc's most negative history numbers ([#1721](https://github.com/reubeno/brush/pull/1721))
+- *(expansion)* One model of quoting for words nested in parameter expansion ([#1730](https://github.com/reubeno/brush/pull/1730))
+- *(patterns)* Shortest prefix/suffix match may be empty ([#1733](https://github.com/reubeno/brush/pull/1733))
+- *(builtins)* Wait for input in read and mapfile when a pipe isn't ready ([#1739](https://github.com/reubeno/brush/pull/1739))
+
+### 🚜 Refactor
+
+- Add standalone assignment parsing functions ([#1265](https://github.com/reubeno/brush/pull/1265))
+- *(parser)* [**breaking**] Mark the parser's error enums non-exhaustive ([#1705](https://github.com/reubeno/brush/pull/1705))
+- Extract array-kind predicates on ShellValue ([#1263](https://github.com/reubeno/brush/pull/1263))
+- *(core)* [**breaking**] Return the full result from `Shell::invoke_function` ([#1354](https://github.com/reubeno/brush/pull/1354))
+- *(completion)* Name the special completion specs in one place ([#1450](https://github.com/reubeno/brush/pull/1450))
+- *(completion)* Name completion specs with a typed SpecName ([#1453](https://github.com/reubeno/brush/pull/1453))
+- *(completion)* [**breaking**] Keep a completion spec's options as a set ([#1454](https://github.com/reubeno/brush/pull/1454))
+- *(completion)* [**breaking**] Name completion actions and options with strum ([#1455](https://github.com/reubeno/brush/pull/1455))
+- *(completion)* Build glob patterns in one place ([#1468](https://github.com/reubeno/brush/pull/1468))
+- *(core)* [**breaking**] Abstract task spawning through sys ([#1486](https://github.com/reubeno/brush/pull/1486))
+- *(core)* Add save/restore mechanism for last-command status ([#1355](https://github.com/reubeno/brush/pull/1355))
+- *(core)* [**breaking**] Make Registration and ArrayLiteral opaque; mark growing enums non_exhaustive ([#1542](https://github.com/reubeno/brush/pull/1542))
+- *(builtins)* [**breaking**] Remove clap types from brush-core API ([#1546](https://github.com/reubeno/brush/pull/1546))
+- *(core)* [**breaking**] Give the shell's builtins a registry type ([#1554](https://github.com/reubeno/brush/pull/1554))
+- *(shell)* Prepare the command line's parsing for a parser change ([#1613](https://github.com/reubeno/brush/pull/1613))
+- *(shell)* Parse brushctl's arguments with winnow-args ([#1627](https://github.com/reubeno/brush/pull/1627))
+- [**breaking**] Write completions in xtask; make brush-shell's args private ([#1636](https://github.com/reubeno/brush/pull/1636))
+- *(builtins)* Parse declare's arguments with winnow-args ([#1638](https://github.com/reubeno/brush/pull/1638))
+- *(builtins)* Parse getopts' arguments with winnow-args ([#1651](https://github.com/reubeno/brush/pull/1651))
+- *(builtins)* Parse set's arguments with winnow-args ([#1650](https://github.com/reubeno/brush/pull/1650))
+
+### 📚 Documentation
+
+- *(completion)* Fix and clarify some doc comments ([#1470](https://github.com/reubeno/brush/pull/1470))
+- Link Windows(MSYS2) package ([#1160](https://github.com/reubeno/brush/pull/1160))
+- Replace a few readme icons ([#1199](https://github.com/reubeno/brush/pull/1199))
+- Community Fedora installation instructions to README.md ([#1155](https://github.com/reubeno/brush/pull/1155))
+- Update readme ([#1383](https://github.com/reubeno/brush/pull/1383))
+- Revamp the main README ([#1391](https://github.com/reubeno/brush/pull/1391))
+- Add crate migration guides and maintenance skills ([#1754](https://github.com/reubeno/brush/pull/1754))
+
+### ⚡ Performance
+
+- *(*)* Extend over for loop ([#1361](https://github.com/reubeno/brush/pull/1361))
+- *(core)* Move a simple command's arguments to it, not a copy ([#1483](https://github.com/reubeno/brush/pull/1483))
+- *(core)* [**breaking**] Keep an error's kind in a box ([#1497](https://github.com/reubeno/brush/pull/1497))
+- Format command args in one pass ([#1503](https://github.com/reubeno/brush/pull/1503))
+- *(history)* Keep items in one ordered vector ([#1464](https://github.com/reubeno/brush/pull/1464))
+
+### 🎨 Styling
+
+- Cargo format
+
+### 🧪 Testing
+
+- Temporarily skip test causing CI issues ([#1275](https://github.com/reubeno/brush/pull/1275))
+- Add variable/declare tests ([#1291](https://github.com/reubeno/brush/pull/1291))
+- *(shell)* Add pty startup tests over the default input backend ([#1322](https://github.com/reubeno/brush/pull/1322))
+- *(e2e)* Onboard bash official tests as opt-in e2e suite ([#1388](https://github.com/reubeno/brush/pull/1388))
+- *(compat)* Track pipeline stages that leak into the shell ([#1487](https://github.com/reubeno/brush/pull/1487))
+- *(compat)* Track process substitution, -v, and pipe deadlock bugs ([#1488](https://github.com/reubeno/brush/pull/1488))
+- *(compat)* 3 new known-failing tests ([#1490](https://github.com/reubeno/brush/pull/1490))
+- *(compat)* Track two bugs with background jobs ([#1493](https://github.com/reubeno/brush/pull/1493))
+- *(compat)* Add known-failing tests for new issues ([#1496](https://github.com/reubeno/brush/pull/1496))
+- *(compat)* Expand builtin-related tests ([#1498](https://github.com/reubeno/brush/pull/1498))
+- *(input)* [**breaking**] New input backend for test automation ([#1491](https://github.com/reubeno/brush/pull/1491))
+- *(compat)* More known-failing tests ([#1502](https://github.com/reubeno/brush/pull/1502))
+- *(compat)* Track gaps in how brush handles signals ([#1505](https://github.com/reubeno/brush/pull/1505))
+- *(compat)* Track gaps in how brush handles fatal errors ([#1509](https://github.com/reubeno/brush/pull/1509))
+- *(compat)* Signal-related tests ([#1511](https://github.com/reubeno/brush/pull/1511))
+- *(compat)* Skip a SIGINT test that doesn't pass reliably ([#1513](https://github.com/reubeno/brush/pull/1513))
+- Increase test coverage for external command resolution + spawn ([#1514](https://github.com/reubeno/brush/pull/1514))
+- *(compat)* New tests for signals, jobs, and coprocesses ([#1532](https://github.com/reubeno/brush/pull/1532))
+- Compat cases for builtin and POSIX-mode behavior ([#1534](https://github.com/reubeno/brush/pull/1534))
+- *(compat)* Track gaps in error handling and special variables ([#1541](https://github.com/reubeno/brush/pull/1541))
+- *(compat)* Add known-failure cases for compopt's operands and listing ([#1547](https://github.com/reubeno/brush/pull/1547))
+- *(compat)* Add a known-failure case for declaration operands after -- ([#1548](https://github.com/reubeno/brush/pull/1548))
+- *(compat)* Add known-failure cases for trap and pushd/popd gaps ([#1556](https://github.com/reubeno/brush/pull/1556))
+- *(compat)* Add known-failure cases for compopt and complete -p operands ([#1555](https://github.com/reubeno/brush/pull/1555))
+- *(compat)* Trap the signal in the subshell-signal case instead of outwaiting it ([#1559](https://github.com/reubeno/brush/pull/1559))
+- *(compat)* Add known-failure cases for ERR trap, BASH_SUBSHELL, time, trap, and error wording gaps ([#1558](https://github.com/reubeno/brush/pull/1558))
+- Track known failure cases recently found ([#1611](https://github.com/reubeno/brush/pull/1611))
+- *(errors)* Errors in a redirected compound command still end the line ([#1629](https://github.com/reubeno/brush/pull/1629))
+- Cover brush's argument parsing, help and completions ([#1641](https://github.com/reubeno/brush/pull/1641))
+- *(builtins)* Cover the simple builtins' option parsing and known divergences ([#1658](https://github.com/reubeno/brush/pull/1658))
+- *(compat)* Mitigate two flaky compat tests ([#1664](https://github.com/reubeno/brush/pull/1664))
+- *(builtins)* Cover --help and -h edge cases ([#1666](https://github.com/reubeno/brush/pull/1666))
+- Inline extglob-disabled script into stdin ([#1672](https://github.com/reubeno/brush/pull/1672))
+- *(compat)* Add declaration compat cases ([#1679](https://github.com/reubeno/brush/pull/1679))
+- *(declare)* Add a known failure for a quoted here-document delimiter ([#1706](https://github.com/reubeno/brush/pull/1706))
+- *(harness)* Stop compat shells inheriting other cases' fds ([#1715](https://github.com/reubeno/brush/pull/1715))
+- Add known failures for number handling that differs from bash ([#1718](https://github.com/reubeno/brush/pull/1718))
+- *(expansion)* Increase coverage for expansion tests ([#1732](https://github.com/reubeno/brush/pull/1732))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(parser)* Remove unused deps ([#1168](https://github.com/reubeno/brush/pull/1168))
+- *(expansion)* Prealloc minimal length of Vec
+- *(interp)* Prealloc length of Vec, use Cow when possible, use slice over Vec
+- *(jobs)* Prealloc Vec capacity
+- *(shell)* Return iterator over &str instead of Vec
+- *(funcs/interactive_shell)* Reduce cloning
+- *(completion)* Replace useless Vec with array
+- *(completion)* Remove premature collect
+- *(interp)* Delay construction of vec when possible
+- *(expansion)* Deref instead of owning
+- *(expansion)* Do not clone automatically in expansion
+- *(expansion)* Delay possible owning
+- *(expansion)* Extend from iterator instead of string
+- *(expansion)* With_capacity for expansion vec
+- *(builtins)* With_capacity and extend for Command::new
+- Use ast-grep to check that platform code stays in brush_core::sys ([#1430](https://github.com/reubeno/brush/pull/1430))
+- *(jobs/config)* Use Cow when possible
+- *(events)* Use static array instead of Vec
+- *(entry)* Remove useless clones
+- *(entry)* Slice instead of vec
+- *(*)* Use map_or instead of map_or_else for small static values
+- Update to os images used for integration testing ([#1186](https://github.com/reubeno/brush/pull/1186))
+- Update to coreutils 0.10.0 ([#1260](https://github.com/reubeno/brush/pull/1260))
+- Upgrade fancy-regex for improvements (+test deps) ([#1262](https://github.com/reubeno/brush/pull/1262))
+- Repo space/typo fixes ([#1286](https://github.com/reubeno/brush/pull/1286))
+- Update reedline to 0.51; update lock file ([#1370](https://github.com/reubeno/brush/pull/1370))
+- Add shellcheck workflow ([#1374](https://github.com/reubeno/brush/pull/1374))
+- Publish canary builds of main to ghcr.io ([#1408](https://github.com/reubeno/brush/pull/1408))
+- Update reedline, lock file ([#1439](https://github.com/reubeno/brush/pull/1439))
+- Build and test WASI on wasm32-wasip3 instead of wasip2 ([#1447](https://github.com/reubeno/brush/pull/1447))
+- Switch from serde_yaml to yaml_serde ([#1494](https://github.com/reubeno/brush/pull/1494))
+- Move runners to the latest images ([#1642](https://github.com/reubeno/brush/pull/1642))
+
+### ◀️ Revert
+
+- Drop the [[ ]] unary operator change from #1616
+
+### Build
+
+- *(deps)* Bump fancy-regex from 0.17.0 to 0.18.0 in the cargo group ([#1123](https://github.com/reubeno/brush/pull/1123))
+- *(deps)* Upgrade cached 0.59 -> 2.0.2 ([#1203](https://github.com/reubeno/brush/pull/1203))
+- Fix cargo deny issues, clippy warnings, lockfile updates ([#1285](https://github.com/reubeno/brush/pull/1285))
+- *(deps)* Bump itertools from 0.14.0 to 0.15.0 in the cargo group across 1 directory ([#1429](https://github.com/reubeno/brush/pull/1429))
+- *(deps)* Bump the cargo group with 4 updates ([#1695](https://github.com/reubeno/brush/pull/1695))
+- *(deps)* Bump the cargo group with 3 updates ([#1166](https://github.com/reubeno/brush/pull/1166))
+- *(msrv)* Move brush-interactive and brush[-shell] MSRV to 1.95, leave others as is ([#1368](https://github.com/reubeno/brush/pull/1368))
+- *(deps)* Bump rust-toolchain from 1.98.1 to 1.99.0 ([#1423](https://github.com/reubeno/brush/pull/1423))
+- *(deps)* Bump winnow-args to 0.6.0 ([#1640](https://github.com/reubeno/brush/pull/1640))
+- Drop clap from the builtins ([#1659](https://github.com/reubeno/brush/pull/1659))
+- *(deps)* Bump rust-toolchain from 1.99.1 to 1.100.0 ([#1727](https://github.com/reubeno/brush/pull/1727))
+
+<!-- generated by git-cliff -->
+
 ## [0.4.0] - 2026-05-02
 
 ### 🚀 Features
