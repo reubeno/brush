@@ -8,7 +8,9 @@ use crate::ast;
 use super::helpers::{comment, peek_char, spaces};
 use super::position::PositionTracker;
 use super::types::{ParseContext, StrStream};
-use super::words::{dollar_expansion, double_quoted_string, single_quoted_string};
+use super::words::{
+    backtick_substitution, dollar_expansion, double_quoted_string, single_quoted_string,
+};
 
 // ============================================================================
 // Extended Test Expressions [[ ]]
@@ -187,6 +189,9 @@ fn ext_test_word<'a>(
                 '$' => {
                     ext_test_parse_dollar_expansion(input, &mut word)?;
                 }
+                '`' => {
+                    word.push_str(backtick_substitution().parse_next(input)?);
+                }
                 '(' | ')' => break,
                 '&' | '|' | '!' => {
                     if !ext_test_parse_special_char(input, &mut word, ch)? {
@@ -325,6 +330,10 @@ fn ext_test_regex_word<'a>(
                         // Dollar expansion
                         ext_test_parse_dollar_expansion(input, &mut result)?;
                     }
+                    '`' => {
+                        // Backquoted command substitution, blanks and all
+                        result.push_str(backtick_substitution().parse_next(input)?);
+                    }
                     '[' => {
                         // Start of bracket expression in regex
                         // Only increment if not already inside a bracket expression
@@ -403,6 +412,8 @@ fn ext_test_regex_word<'a>(
                                     | '\''
                                     | '"'
                                     | '\\'
+                                    | '`'
+                                    | '$'
                             )
                         })
                         .parse_next(input)?;

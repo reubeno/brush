@@ -391,7 +391,10 @@ pub(super) fn word_part<'a>(
                 .parse_next(input),
             // Tilde after colon: ~user or ~ expansion
             '~' if ctx.options.tilde_expansion_after_colon && last_char == Some(':') => {
-                if let Ok(tilde_expr) = tilde_expansion().parse_next(input) {
+                // `opt` gives back what a failed tilde expansion consumed.
+                if let Some(tilde_expr) =
+                    winnow::combinator::opt(tilde_expansion()).parse_next(input)?
+                {
                     Ok(Cow::Borrowed(tilde_expr))
                 } else {
                     bare_word().map(Cow::Borrowed).parse_next(input)
@@ -438,7 +441,11 @@ pub(super) fn word_as_ast<'a>(
 
         if ctx.options.tilde_expansion_at_word_start {
             if peek_char().parse_next(input).ok() == Some('~') {
-                if let Ok(tilde_expr) = tilde_expansion().parse_next(input) {
+                // `opt` gives back what a failed tilde expansion consumed: a tilde that
+                // doesn't start one (`~)` in a case pattern) is read as text.
+                if let Some(tilde_expr) =
+                    winnow::combinator::opt(tilde_expansion()).parse_next(input)?
+                {
                     last_char = tilde_expr.chars().last();
                     value = Cow::Borrowed(tilde_expr);
                 }

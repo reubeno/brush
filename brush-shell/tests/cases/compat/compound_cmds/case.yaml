@@ -194,3 +194,14 @@ cases:
   - name: "Case inside command substitution"
     stdin: |
       echo $(case a in a) echo ok ;; esac)
+
+  - name: "Tilde as a case pattern"
+    env:
+      HOME: /home/user
+    stdin: |
+      for s in /home/user x '~'; do
+        case $s in ~) echo "tilde: $s" ;; *) echo "other: $s" ;; esac
+        case $s in (~) echo "tilde: $s" ;; *) echo "other: $s" ;; esac
+        case $s in y|~) echo "tilde: $s" ;; *) echo "other: $s" ;; esac
+        case $s in ~a) echo "user a: $s" ;; *) echo "other: $s" ;; esac
+      done

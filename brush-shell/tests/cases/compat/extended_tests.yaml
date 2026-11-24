@@ -764,3 +764,20 @@ cases:
       [[ "a b" =~ a\ b ]] && echo "1. Matched escaped space"
       f() { [[ "a b" =~ a\ b ]]; }
       echo "result: $?"
+
+  - name: "Backquoted command substitutions as operands"
+    stdin: |
+      [[ `echo e` == e ]] && echo "1. left"
+      [[ e == `echo e` ]] && echo "2. right"
+      [[ e != `echo e` ]] || echo "3. not equal"
+      [[ -n `echo e` ]] && echo "4. unary"
+      [[ xey == x`echo e`y ]] && echo "5. mid-word"
+      [[ e == `echo "e  "` ]] || echo "6. blanks inside"
+      [[ ab =~ a`echo b`$ ]] && echo "7. regex"
+
+  - name: "Parameter expansions with blanks mid-word in patterns"
+    stdin: |
+      [[ "xa  by" == x${u:-a  b}y ]] && echo "1. pattern"
+      [[ "xab" == x${u:-"a" "b"} ]] || echo "2. quoted words"
+      x=b; [[ ab =~ ^a${x}$ ]] && echo "3. regex"
+      [[ 'a$' == a$ ]] && echo "4. trailing dollar"
