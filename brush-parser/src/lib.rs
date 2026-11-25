@@ -9,7 +9,7 @@ pub mod arithmetic;
 pub mod ast;
 /// Guides for users of this crate.
 pub mod docs {
-    #[doc = include_str!("../migrations/unreleased.md")]
+    #[doc = include_str!("../migrations/0.5.0.md")]
     pub mod migrations {}
 }
 pub mod pattern;

@@ -7,8 +7,7 @@ need additional changes.
 
 | From | To | Guide |
 |---|---|---|
-| 0.5.0 | unreleased | [Migration details](migrations/unreleased.md) |
+| 0.5.0 | 0.6.0 | [Migration details](migrations/0.6.0.md) |
 
 Transition files ship in the crate package. The current transition is also
 rendered in crate-level rustdoc, with runnable examples where practical.
-Unreleased instructions describe prospective APIs, not a published release.

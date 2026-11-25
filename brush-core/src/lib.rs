@@ -11,7 +11,7 @@ pub mod commands;
 pub mod completion;
 /// Guides for users of this crate.
 pub mod docs {
-    #[doc = include_str!("../migrations/unreleased.md")]
+    #[doc = include_str!("../migrations/0.6.0.md")]
     pub mod migrations {}
 }
 pub mod env;
