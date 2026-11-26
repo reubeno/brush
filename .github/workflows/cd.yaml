@@ -8,8 +8,8 @@
 # gnu build only on glibc 2.34+ and the musl build otherwise). Changing any of these breaks the
 # install script for new releases; update it (and its tests) to match.
 #
-# Pushes to `main` also publish canary builds to ghcr.io/reubeno/brush-canary (see the
-# publish-canary job), which `install.sh --canary` installs from.
+# Pushes to `main` also publish canary builds (except for Intel macOS) to
+# ghcr.io/reubeno/brush-canary, which `install.sh --canary` installs from.
 #
 
 name: CD # Continuous Deployment
@@ -104,7 +104,7 @@ jobs:
             brush-docs.tar.gz.sha512
 
   upload-assets:
-    name: ${{ matrix.target }}
+    name: ${{ matrix.build.target }}
 
     permissions:
       contents: write
@@ -112,37 +112,39 @@ jobs:
       attestations: write
 
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' || github.event_name == 'push' || (github.event_name == 'release' && github.repository_owner == 'reubeno' && startsWith(github.event.release.tag_name, 'brush-shell-v'))
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.build.os }}
     strategy:
-      # Run all jobs to completion regardless of errors.
-      # This is useful because sometimes we fail to compile for a certain target.
+      # Run all jobs to completion regardless of errors. This is useful because sometimes
+      # we fail to compile for a certain target.
       fail-fast: false
       matrix:
-        include:
+        build:
           - target: aarch64-pc-windows-msvc
             os: windows-2025
-            force_dry_run: false
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-22.04
-            force_dry_run: false
-          - target: x86_64-apple-darwin
+          - &intel_macos
+            target: x86_64-apple-darwin
             os: macos-26-intel
-            force_dry_run: false
+            # There's no prebuilt cargo-about binary so it must be built from source.
+            cargo_about_from_source: true
           - target: x86_64-pc-windows-msvc
             os: windows-2025
-            force_dry_run: false
           - target: x86_64-unknown-linux-musl
             os: ubuntu-26.04
-            force_dry_run: false
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-22.04
-            force_dry_run: false
           - target: aarch64-unknown-linux-musl
             os: ubuntu-26.04
-            force_dry_run: false
           - target: aarch64-apple-darwin
             os: macos-26
-            force_dry_run: false
+        is_pull_request_or_push:
+          - ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+        exclude:
+          # Save macOS runner time by skipping Intel on PRs and pushes; keep them for
+          # manual runs and releases, though.
+          - is_pull_request_or_push: true
+            build: *intel_macos
     timeout-minutes: 60
 
     steps:
@@ -157,16 +159,16 @@ jobs:
           cache: false
           # The cross ARM64 musl linker wrapper emits shell traces as linker warnings.
           # See https://github.com/cross-rs/cross/issues/1618.
-          build-warnings: ${{ matrix.target == 'aarch64-unknown-linux-musl' && 'warn' || 'deny' }}
+          build-warnings: ${{ matrix.build.target == 'aarch64-unknown-linux-musl' && 'warn' || 'deny' }}
 
       - name: "Setup cross-compiling toolchain"
-        if: startsWith(matrix.os, 'ubuntu') && !contains(matrix.target, '-musl')
+        if: endsWith(matrix.build.target, '-linux-gnu')
         uses: taiki-e/setup-cross-toolchain-action@12b7ad4acfa95a1476779d6c06699b96ec1691f8 # v1.42.0
         with:
-          target: ${{ matrix.target }}
+          target: ${{ matrix.build.target }}
 
       - name: "Install musl cross tools"
-        if: contains(matrix.target, '-musl')
+        if: contains(matrix.build.target, '-musl')
         uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cross
@@ -175,6 +177,13 @@ jobs:
         run: cargo clean
 
       - name: "Install cargo-about"
+        if: ${{ !matrix.build.cargo_about_from_source }}
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with:
+          tool: cargo-about
+
+      - name: "Install cargo-about from source"
+        if: matrix.build.cargo_about_from_source
         run: cargo install cargo-about --locked --features cli
 
       - name: "Generate license notices"
@@ -182,7 +191,7 @@ jobs:
         run: cargo about generate -o ../THIRD_PARTY_LICENSES.html about.hbs
 
       - name: "Update build flags"
-        if: endsWith(matrix.target, 'windows-msvc')
+        if: endsWith(matrix.build.target, 'windows-msvc')
         run: echo "RUSTFLAGS=${RUSTFLAGS} -C target-feature=+crt-static" >> "${GITHUB_ENV}"
 
       - name: "Build and upload binaries to release"
@@ -194,10 +203,10 @@ jobs:
           # cross only forwards environment variables it's told about into its build container.
           CROSS_BUILD_ENV_PASSTHROUGH: BRUSH_VERSION_SUFFIX
         with:
-          dry-run: ${{ github.event_name != 'release' || matrix.force_dry_run }}
+          dry-run: ${{ github.event_name != 'release' }}
           bin: brush
           locked: true
-          target: ${{ matrix.target }}
+          target: ${{ matrix.build.target }}
           tar: unix
           zip: windows
           checksum: sha256,sha512
@@ -206,16 +215,16 @@ jobs:
 
       - name: "Generate artifact attestation"
         # Canary builds (pushes to `main`) are attested too, for `install.sh --canary` to verify.
-        if: (github.event_name == 'release' && !matrix.force_dry_run) || (github.event_name == 'push' && github.repository == 'reubeno/brush')
+        if: (github.event_name == 'release') || (github.event_name == 'push' && github.repository == 'reubeno/brush')
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: "${{ steps.upload-release.outputs.archive }}.*"
 
       - name: "Upload artifacts (dry-run)"
-        if: github.event_name != 'release' || matrix.force_dry_run
+        if: github.event_name != 'release'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: brush-${{ matrix.target }}
+          name: brush-${{ matrix.build.target }}
           path: "${{ steps.upload-release.outputs.archive }}.*"
 
   # Publishes builds of `main` to ghcr.io/reubeno/brush-canary, where `install.sh --canary` finds
@@ -297,9 +306,8 @@ jobs:
         run: |
           versions="/users/${GITHUB_REPOSITORY_OWNER}/packages/container/brush-canary/versions"
 
-          # Each build adds one version per target (8 of them), so keeping the newest 800 versions
-          # keeps about 100 builds. Versions still tagged with a bare `<target>` (the newest build
-          # of that target) are never deleted.
+          # Keeping the newest 800 versions at seven canary targets per push retains roughly 100
+          # builds. Versions still tagged with a bare `<target>` are never deleted.
           gh api --paginate --slurp "${versions}?per_page=100" |
             jq -r 'add | sort_by(.created_at) | reverse | .[800:][]
                    | select(.metadata.container.tags | all(test("-[0-9a-f]{40}$")))

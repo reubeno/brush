@@ -8,13 +8,11 @@ Usage: python3 -m pytest scripts/install/tests
 (Set GH_TOKEN, e.g. to `$(gh auth token)`, to also verify a real build attestation.)
 """
 
-import json
 import os
 import platform
 import re
 import shutil
 import subprocess
-import urllib.request
 from pathlib import Path
 
 import pytest
@@ -261,11 +259,23 @@ def test_no_path_note_when_dir_is_in_path_via_symlink(install, tmp_path):
     assert not [line for line in result.stdout.splitlines() if "note:" in line and "attestation" not in line]
 
 
-def test_latest_canary(install, tmp_path):
-    result = install("--canary", "--dir", tmp_path)
+def test_latest_and_pinned_canary(install, tmp_path):
+    dest = tmp_path / "latest"
+    result = install("--canary", "--dir", dest)
     assert_succeeded(result)
     assert "ghcr.io/reubeno/brush-canary:" in result.stdout
-    assert "+canary " in brush_version(tmp_path / "brush")
+    assert "+canary " in brush_version(dest / "brush")
+
+    match = re.search(r"canary build of commit ([0-9a-f]{40}), published", result.stdout)
+    assert match, result.stdout
+    commit = match[1]
+    args_file = tmp_path / "gh-args"
+    dest = tmp_path / "pinned"
+    result = install("--commit", commit, "--dir", dest, shims=["gh-records-args"], GH_ARGS_FILE=args_file)
+    assert_succeeded(result)
+    assert re.search(rf"canary build of commit {commit}, published \d{{4}}-\d\d-\d\dT", result.stdout), result.stdout
+    assert f"--source-digest {commit}" in args_file.read_text()
+    assert f"(git:{commit[:7]}" in brush_version(dest / "brush")
 
 
 @pytest.mark.skipif(not GH_INSTALLED, reason="gh is not installed")
@@ -274,30 +284,6 @@ def test_verifies_real_canary_attestation(install, tmp_path):
     result = install("--canary", "--dir", tmp_path, "--require-attestation")
     assert_succeeded(result)
     assert "verified GitHub build attestation" in result.stdout
-
-
-def newest_canary_commit():
-    """Returns the commit of the newest canary build, from its manifest on ghcr.io."""
-    package = "reubeno/brush-canary"
-    with urllib.request.urlopen(f"https://ghcr.io/token?scope=repository:{package}:pull") as response:
-        token = json.load(response)["token"]
-    # Every build publishes all targets, so any target's tag names the same commit.
-    request = urllib.request.Request(
-        f"https://ghcr.io/v2/{package}/manifests/x86_64-unknown-linux-musl",
-        headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.oci.image.manifest.v1+json"},
-    )
-    with urllib.request.urlopen(request) as response:
-        return json.load(response)["annotations"]["org.opencontainers.image.revision"]
-
-
-def test_pinned_canary_attestation_checks_commit(install, tmp_path):
-    commit = newest_canary_commit()
-    args_file = tmp_path / "gh-args"
-    result = install("--commit", commit, "--dir", tmp_path / "bin", shims=["gh-records-args"], GH_ARGS_FILE=args_file)
-    assert_succeeded(result)
-    assert re.search(rf"canary build of commit {commit}, published \d{{4}}-\d\d-\d\dT", result.stdout), result.stdout
-    assert f"--source-digest {commit}" in args_file.read_text()
-    assert f"(git:{commit[:7]}" in brush_version(tmp_path / "bin" / "brush")
 
 
 def test_help(install):
