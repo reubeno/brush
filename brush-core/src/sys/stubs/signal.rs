@@ -32,6 +32,15 @@ impl TryFrom<i32> for Signal {
     }
 }
 
+/// Returns the numbers of all signals that currently have a `SIG_IGN`
+/// disposition.
+///
+/// This is a stub implementation that returns no signals, as signals are not
+/// supported on this platform.
+pub fn ignored_signals_on_entry() -> Vec<i32> {
+    Vec::new()
+}
+
 pub(crate) fn continue_process(_pid: sys::process::ProcessId) -> Result<(), error::Error> {
     Err(error::ErrorKind::NotSupportedOnThisPlatform("continuing process").into())
 }
@@ -116,4 +125,10 @@ pub(crate) fn poll_for_stopped_children(
 
 pub(crate) fn poll_for_stopped_child(_pid: sys::process::ProcessId) -> Result<bool, error::Error> {
     Ok(false)
+}
+
+/// Computes the name bash uses for a real-time signal: there are none on this
+/// platform.
+pub(crate) const fn real_time_signal_name(_n: i32) -> Option<String> {
+    None
 }

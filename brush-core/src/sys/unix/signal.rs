@@ -4,6 +4,58 @@ use crate::{error, sys, traps};
 
 pub(crate) use nix::sys::signal::Signal;
 
+/// Returns the numbers of all signals that currently have a `SIG_IGN`
+/// disposition.
+///
+/// This is used to mirror bash's behavior of reporting signals that were
+/// ignored when the shell started (e.g., `SIGRTMIN` in some environments) via
+/// `trap -p`.
+pub fn ignored_signals_on_entry() -> Vec<i32> {
+    let mut ignored = Vec::new();
+
+    let mut consider = |n: i32| {
+        if signal_is_ignored(n) {
+            ignored.push(n);
+        }
+    };
+
+    for signal in Signal::iterator() {
+        consider(signal as i32);
+    }
+
+    // Real-time signals (e.g., `SIGRTMIN`) aren't part of the `Signal` enum,
+    // so query them separately where they're supported.
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        for n in nix::libc::SIGRTMIN()..=nix::libc::SIGRTMAX() {
+            consider(n);
+        }
+    }
+
+    // The Rust runtime always sets SIGPIPE to `SIG_IGN` at startup, so it does
+    // not reflect the disposition inherited from the parent process. bash (a C
+    // program) starts with `SIGPIPE` at its inherited disposition (typically
+    // `SIG_DFL`) and so does not report it. Skip `SIGPIPE` to match bash.
+    ignored.retain(|&n| n != nix::libc::SIGPIPE);
+
+    ignored
+}
+
+/// Returns whether the given signal number currently has a `SIG_IGN`
+/// disposition.
+fn signal_is_ignored(signal_number: i32) -> bool {
+    // SAFETY: `sigaction` is a plain integer-initialized struct; zeroing it
+    // produces a valid value to receive the current action.
+    let mut old_action: nix::libc::sigaction = unsafe { std::mem::zeroed() };
+
+    // SAFETY: Querying the current action (by passing a null new-action
+    // pointer) is safe and does not modify any signal handler state.
+    let result =
+        unsafe { nix::libc::sigaction(signal_number, std::ptr::null(), &raw mut old_action) };
+
+    result == 0 && old_action.sa_sigaction == nix::libc::SIG_IGN
+}
+
 pub(crate) fn continue_process(pid: sys::process::ProcessId) -> Result<(), error::Error> {
     nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), nix::sys::signal::SIGCONT)
         .map_err(|_errno| error::ErrorKind::FailedToSendSignal)?;
@@ -300,4 +352,65 @@ fn siginfo_to_wait_status(
     };
 
     Ok(status)
+}
+
+/// Computes the name bash uses for a real-time signal (e.g., `SIGRTMIN`,
+/// `SIGRTMIN+1`, `SIGRTMAX-1`).
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub(crate) fn real_time_signal_name(n: i32) -> Option<String> {
+    let rtmin = nix::libc::SIGRTMIN();
+    let rtmax = nix::libc::SIGRTMAX();
+    if n < rtmin || n > rtmax {
+        return None;
+    }
+    let rtcnt = (rtmax - rtmin) / 2;
+    if n - rtmin <= rtcnt {
+        let offset = n - rtmin;
+        if offset == 0 {
+            Some("SIGRTMIN".to_owned())
+        } else {
+            Some(format!("SIGRTMIN+{offset}"))
+        }
+    } else {
+        let offset = rtmax - n;
+        if offset == 0 {
+            Some("SIGRTMAX".to_owned())
+        } else {
+            Some(format!("SIGRTMAX-{offset}"))
+        }
+    }
+}
+
+/// Other systems have no real-time signals.
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
+pub(crate) const fn real_time_signal_name(_n: i32) -> Option<String> {
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::traps::signal_name_for_number;
+
+    #[test]
+    fn signals_are_named_as_bash_names_them() {
+        assert_eq!(signal_name_for_number(1), "SIGHUP");
+        assert_eq!(signal_name_for_number(13), "SIGPIPE");
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn real_time_signals_are_named_from_both_ends() {
+        let rtmin = nix::libc::SIGRTMIN();
+        let rtmax = nix::libc::SIGRTMAX();
+        let rtcnt = (rtmax - rtmin) / 2;
+
+        assert_eq!(signal_name_for_number(rtmin), "SIGRTMIN");
+        assert_eq!(signal_name_for_number(rtmin + 1), "SIGRTMIN+1");
+        assert_eq!(
+            signal_name_for_number(rtmin + rtcnt),
+            format!("SIGRTMIN+{rtcnt}")
+        );
+        assert_eq!(signal_name_for_number(rtmax), "SIGRTMAX");
+        assert_eq!(signal_name_for_number(rtmax - 1), "SIGRTMAX-1");
+    }
 }
