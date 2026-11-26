@@ -14,7 +14,7 @@ thread_local! {
     // degrade to compiling regexes uncached rather than panicking. (With a fixed
     // positive `max_size` this always succeeds, but `build()` is fallible.)
     static REGEX_CACHE: RefCell<Option<RegexCache>> =
-        RefCell::new(cached::LruCache::builder().max_size(64).build().ok());
+        RefCell::new(cached::LruCache::builder().max_size(1024).build().ok());
 }
 
 /// Represents a piece of a regular expression.
