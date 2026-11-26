@@ -121,13 +121,14 @@ fn format_via_uucore(
     // even if there's no format arguments.
     while format_args.is_empty() || !format_args_wrapper.is_exhausted() {
         // Process all format items, in order. We'll bail when we're told to stop.
-        for (item, backslash_quote) in &format_items {
-            if let (format::FormatItem::Spec(format::Spec::QuotedString { position }), true) =
-                (item, *backslash_quote)
+        for (item, quote_spec) in &format_items {
+            if let (
+                format::FormatItem::Spec(format::Spec::QuotedString { position }),
+                Some(quote_spec),
+            ) = (item, quote_spec)
             {
                 let arg = format_args_wrapper.next_string(*position).to_string_lossy();
-                let quoted = quote_printf_q(&arg);
-                write!(writer, "{quoted}")?;
+                writer.write_all(&quote_spec.format(&arg))?;
                 continue;
             }
 
@@ -176,27 +177,138 @@ fn quote_printf_q(s: &str) -> String {
     escape::quote(s, &options).into_owned()
 }
 
-type ParsedFormatItem = (format::FormatItem<format::EscapedChar>, bool);
+/// A `%q` or `%Q` conversion with its fixed flags, width and precision, which uucore
+/// doesn't accept for these conversions.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct QuoteSpec {
+    /// `%Q`: the precision applies to the argument before it's quoted.
+    upper: bool,
+    /// The `#` flag: quote with single quotes, even when nothing needs quoting.
+    alternate: bool,
+    /// The `-` flag: pad on the right.
+    left_align: bool,
+    width: usize,
+    precision: Option<usize>,
+}
+
+impl QuoteSpec {
+    /// Parses the bytes after the `%` of a fixed `q` or `Q` spec, e.g. `-12.5q`. Like bash,
+    /// accepts and ignores flags other than `-` and `#`, and any length modifiers.
+    fn parse(spec: &[u8]) -> Option<Self> {
+        let mut result = Self::default();
+        let mut rest = spec;
+
+        while let [flag @ (b'#' | b'\'' | b'-' | b'+' | b' ' | b'0'), tail @ ..] = rest {
+            match flag {
+                b'#' => result.alternate = true,
+                b'-' => result.left_align = true,
+                _ => (),
+            }
+            rest = tail;
+        }
+
+        result.width = parse_decimal(&mut rest)?;
+
+        if let [b'.', tail @ ..] = rest {
+            rest = tail;
+            // A precision with no digits is zero.
+            result.precision = Some(parse_decimal(&mut rest)?);
+        }
+
+        while let [b'h' | b'j' | b'l' | b'L' | b't' | b'z', tail @ ..] = rest {
+            rest = tail;
+        }
+
+        result.upper = match rest {
+            [b'q'] => false,
+            [b'Q'] => true,
+            _ => return None,
+        };
+
+        Some(result)
+    }
+
+    /// Quotes `arg`, then applies the precision and width, both counted in bytes as bash does.
+    fn format(&self, arg: &str) -> Vec<u8> {
+        let arg = match self.precision {
+            Some(precision) if self.upper => truncate_at_char_boundary(arg, precision),
+            _ => arg,
+        };
+
+        let quoted = if self.alternate {
+            escape::force_quote(arg, escape::QuoteMode::SingleQuote)
+        } else {
+            quote_printf_q(arg)
+        };
+
+        let mut quoted = quoted.into_bytes();
+        if let Some(precision) = self.precision.filter(|_| !self.upper) {
+            quoted.truncate(precision);
+        }
+
+        let padding = vec![b' '; self.width.saturating_sub(quoted.len())];
+        if self.left_align {
+            quoted.extend(padding);
+            quoted
+        } else {
+            [padding, quoted].concat()
+        }
+    }
+}
+
+/// Parses the run of decimal digits at the start of `rest` and advances past it. No digits
+/// count as zero. Returns `None` if the number is larger than bash allows (`INT_MAX`).
+fn parse_decimal(rest: &mut &[u8]) -> Option<usize> {
+    const MAX: usize = 0x7fff_ffff;
+
+    let digits = rest.iter().take_while(|b| b.is_ascii_digit()).count();
+    let (number, tail) = rest.split_at(digits);
+    *rest = tail;
+    number
+        .iter()
+        .try_fold(0usize, |value, digit| {
+            value
+                .checked_mul(10)?
+                .checked_add(usize::from(digit - b'0'))
+        })
+        .filter(|value| *value <= MAX)
+}
+
+/// Returns the longest prefix of `s` that is at most `max_len` bytes and ends on a char
+/// boundary.
+fn truncate_at_char_boundary(s: &str, max_len: usize) -> &str {
+    if max_len >= s.len() {
+        return s;
+    }
+
+    let mut end = max_len;
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+
+    s.get(..end).unwrap_or_default()
+}
+
+type ParsedFormatItem = (format::FormatItem<format::EscapedChar>, Option<QuoteSpec>);
 
 fn parse_format_string(format_string: &str) -> Result<Vec<ParsedFormatItem>, brush_core::Error> {
     let format_items: Result<Vec<_>, _> = format::parse_spec_and_escape(format_string.as_bytes())
         .map(|result| match result {
             Ok(item @ format::FormatItem::Spec(format::Spec::QuotedString { .. })) => {
-                Ok((item, true))
+                Ok((item, Some(QuoteSpec::default())))
             }
-            Ok(item) => Ok((item, false)),
-            // Fixed q/Q modifiers are deliberately ignored; dynamic modifiers remain unsupported
-            // until uucore exposes quoted-string metadata.
-            Err(format::FormatError::SpecError(spec, span))
-                if matches!(spec.last(), Some(b'q' | b'Q'))
-                    && !spec.contains(&b'*')
-                    && !spec.contains(&b'$') =>
-            {
+            Ok(item) => Ok((item, None)),
+            // uucore rejects q/Q with flags, a width or a precision, so fixed ones are handled
+            // here. Dynamic (`*`) and positional (`$`) forms remain unsupported.
+            Err(format::FormatError::SpecError(spec, span)) => {
+                let Some(quote_spec) = QuoteSpec::parse(&spec) else {
+                    return Err(format::FormatError::SpecError(spec, span));
+                };
                 let mut bare_q: &[u8] = b"q";
                 let item = format::Spec::parse(&mut bare_q)
                     .map(format::FormatItem::Spec)
                     .map_err(|spec| format::FormatError::SpecError(spec.to_vec(), span))?;
-                Ok((item, !spec.contains(&b'#')))
+                Ok((item, Some(quote_spec)))
             }
             Err(error) => Err(error),
         })
@@ -248,5 +360,54 @@ mod tests {
         assert_eq!(sprintf_via_uucore("%s|", ["x", "y"].iter())?, "x|y|");
 
         Ok(())
+    }
+
+    #[test]
+    fn test_sprintf_quoted_with_width_and_precision() -> Result<()> {
+        assert_eq!(
+            sprintf_via_uucore("<%12q>", ["foo bar"].iter())?,
+            "<    foo\\ bar>"
+        );
+        assert_eq!(
+            sprintf_via_uucore("<%-12q>", ["foo bar"].iter())?,
+            "<foo\\ bar    >"
+        );
+        assert_eq!(
+            sprintf_via_uucore("<%.5q>", ["foo bar"].iter())?,
+            "<foo\\ >"
+        );
+        assert_eq!(
+            sprintf_via_uucore("<%.5Q>", ["foo bar"].iter())?,
+            "<foo\\ b>"
+        );
+        assert_eq!(sprintf_via_uucore("<%.q>", ["x"].iter())?, "<>");
+        assert_eq!(sprintf_via_uucore("<%3q>", [""].iter())?, "< ''>");
+        assert_eq!(sprintf_via_uucore("<%#q>", ["foo"].iter())?, "<'foo'>");
+        assert_eq!(
+            sprintf_via_uucore("<%#12q>", ["foo bar"].iter())?,
+            "<   'foo bar'>"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_quote_spec() {
+        assert_eq!(QuoteSpec::parse(b"q"), Some(QuoteSpec::default()));
+        assert_eq!(
+            QuoteSpec::parse(b"-#012.3lQ"),
+            Some(QuoteSpec {
+                upper: true,
+                alternate: true,
+                left_align: true,
+                width: 12,
+                precision: Some(3),
+            })
+        );
+        assert_eq!(QuoteSpec::parse(b"*q"), None);
+        assert_eq!(QuoteSpec::parse(b"2$q"), None);
+        assert_eq!(QuoteSpec::parse(b"5s"), None);
+        assert_eq!(QuoteSpec::parse(b"99999999999999999999999q"), None);
+        assert_eq!(QuoteSpec::parse(b"99999999999q"), None);
     }
 }
