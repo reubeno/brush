@@ -1,7 +1,7 @@
-use std::io::Write;
-
 use brush_core::traps::TrapSignal;
+use brush_core::writeln_async;
 use brush_core::{ExecutionResult, builtins};
+use tokio::io::AsyncWriteExt as _;
 
 /// Manage signal traps.
 #[derive(winnow_args::Args)]
@@ -29,15 +29,17 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for TrapCommand {
         mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         if self.list_signals {
-            brush_core::traps::format_signals(context.stdout(), TrapSignal::iterator())
-                .map(|()| ExecutionResult::success())
+            let mut text = Vec::new();
+            brush_core::traps::format_signals(&mut text, TrapSignal::iterator())?;
+            context.stdout_async().write_all(&text).await?;
+            Ok(ExecutionResult::success())
         } else if self.print_trap_commands || self.args.is_empty() {
             if !self.args.is_empty() {
                 for signal_type in &self.args {
-                    Self::display_handlers_for(&context, signal_type.parse()?)?;
+                    Self::display_handlers_for(&context, signal_type.parse()?).await?;
                 }
             } else {
-                Self::display_all_handlers(&context)?;
+                Self::display_all_handlers(&context).await?;
             }
             Ok(ExecutionResult::success())
         } else {
@@ -63,7 +65,8 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for TrapCommand {
                         None => Self::remove_all_handlers(&mut context, signal),
                     },
                     Err(e) => {
-                        writeln!(context.stderr(), "{}: {e}", context.command_name)?;
+                        writeln_async!(context.stderr_async(), "{}: {e}", context.command_name)
+                            .await?;
                         result = ExecutionResult::general_error();
                     }
                 }
@@ -74,25 +77,26 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for TrapCommand {
 }
 
 impl TrapCommand {
-    fn display_all_handlers(
+    async fn display_all_handlers(
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<(), brush_core::Error> {
         for (signal, _) in context.shell.traps().iter_handlers() {
-            Self::display_handlers_for(context, signal)?;
+            Self::display_handlers_for(context, signal).await?;
         }
         Ok(())
     }
 
-    fn display_handlers_for(
+    async fn display_handlers_for(
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         signal_type: TrapSignal,
     ) -> Result<(), brush_core::Error> {
         if let Some(handler) = context.shell.traps().get_handler(signal_type) {
-            writeln!(
-                context.stdout(),
+            writeln_async!(
+                context.stdout_async(),
                 "trap -- '{}' {signal_type}",
                 handler.command
-            )?;
+            )
+            .await?;
         }
         Ok(())
     }

@@ -202,8 +202,160 @@ cases:
       x=$(<file.txt)
       echo "x: $x"
 
+  - name: "Input-only command substitution from process substitution"
+    stdin: |
+      echo $(< <(echo x) )
+      [[ $(< <(echo foo) ) == foo ]]
+      echo "status: $?"
+      x=`< <(echo legacy)`
+      echo "backquote: $x"
+
+  - name: "Input-only command substitution preserves producer subshell depth"
+    stdin: |
+      x=$(< <(printf '%s' "$BASH_SUBSHELL"))
+      printf 'depth: %s\n' "$x"
+      (x=$(< <(printf '%s' "$BASH_SUBSHELL")); printf 'nested: %s\n' "$x")
+      x=$(< <(printf '%s' "$BASH_SUBSHELL"; (printf ':%s' "$BASH_SUBSHELL")))
+      printf 'producer: %s\n' "$x"
+
+  - name: "Input-only command substitution expands its filename in the caller"
+    test_files:
+      - path: file.txt
+        contents: |
+          content
+      - path: file-0.txt
+        contents: |
+          caller
+      - path: file-1.txt
+        contents: |
+          subshell
+    stdin: |
+      unset file
+      x=$(< "${file:=file.txt}")
+      printf 'value: %s file: %s\n' "$x" "${file-unset}"
+      x=$(< "file-$BASH_SUBSHELL.txt")
+      printf 'depth: %s\n' "$x"
+      x=$(< "$(printf 'file-%s.txt' "$BASH_SUBSHELL")")
+      printf 'nested expansion: %s\n' "$x"
+
+  - name: "Input-only command substitution missing file is not fatal"
+    ignore_stderr: true
+    stdin: |
+      x=$(< missing.txt) || printf 'failure: %s\n' "$?"
+      printf 'continued: <%s>\n' "$x"
+      { x=$(< missing.txt); printf 'closed stderr: %s\n' "$?"; } 2>&-
+
+  - name: "Input-only command substitution survives failed diagnostic writes"
+    stdin: |
+      [[ -e /dev/full ]] || exit 0
+      {
+        x=$(< missing.txt)
+        printf 'assignment: <%s> status=%s\n' "$x" "$?"
+        printf 'value: <%s>\n' "$(< missing.txt)"
+      } 2>/dev/full
+      printf 'continued: %s\n' "$?"
+
+  - name: "Input-only command substitution propagates fatal expansion errors"
+    ignore_exit_status: true
+    ignore_stderr: true
+    stdin: |
+      set -u
+      x=$(< "$unset_filename")
+      echo "unexpected continuation"
+
+  - name: "Input-only command substitution excludes background and timed redirects"
+    test_files:
+      - path: file.txt
+        contents: |
+          content
+    stdin: |
+      x=$(< file.txt &)
+      printf 'background file: <%s>\n' "$x"
+      x=$(< <(printf value) &)
+      printf 'background process: <%s>\n' "$x"
+      { x=$(time < file.txt); } 2>timing.txt
+      printf 'timed file: <%s> ' "$x"
+      if [[ -s timing.txt ]]; then echo reported; else echo missing; fi
+      { x=$(time < <(printf value)); } 2>timing.txt
+      printf 'timed process: <%s> ' "$x"
+      if [[ -s timing.txt ]]; then echo reported; else echo missing; fi
+      rm timing.txt
+
+  - name: "Input-only command substitution completes when producer closes stdout"
+    timeout_in_seconds: 5
+    stdin: |
+      mkfifo gate
+      x=$(< <(exec 1>&-; read -r line < gate; printf '%s\n' "$line" >result))
+      echo "substitution returned"
+      printf 'released\n' >gate
+      while [[ ! -f result ]]; do sleep 0.01; done
+      cat result
+      rm gate result
+
+  - name: "Input-only command substitution preserves inherited process descriptors"
+    test_files:
+      - path: file.txt
+        contents: |
+          original
+    stdin: |
+      read_input() { read -r value; printf '%s\n' "$value"; }
+      outer() {
+        x=$(< <(read_input <(printf 'replacement\n') <&63))
+        printf '%s\n' "$x"
+      }
+      outer 63<file.txt
+
+  - name: "Input-only command substitution from process substitution with explicit stdin"
+    stdin: |
+      x=$(0< <(echo explicit))
+      echo "x: $x"
+
+  - name: "Input-only command substitution from delayed process substitution"
+    stdin: |
+      x=$(< <(sleep 0.05; printf 'first\nsecond\n\n'))
+      printf '<%s> length: %s\n' "$x" "${#x}"
+
+  - name: "Input-only command substitution from large process substitution"
+    stdin: |
+      x=$(< <(printf '%0131072d\n' 0))
+      printf 'length: %s first: %s last: %s\n' "${#x}" "${x:0:1}" "${x: -1}"
+
+  - name: "Input-only command substitution ignores process substitution exit status"
+    stdin: |
+      x=$(< <(printf value; exit 7))
+      printf 'value: %s status: %s\n' "$x" "$?"
+
+  - name: "Input-only command substitution process substitution inherits errexit"
+    stdin: |
+      set -e
+      x=$(< <(printf before; false; printf after))
+      printf 'errexit: <%s>\n' "$x"
+      x=$(< <(false; printf continued)) || :
+      printf 'conditional: <%s>\n' "$x"
+      if x=$(< <(false; printf continued)); then printf 'if: <%s>\n' "$x"; fi
+      x=$(< <(false; printf continued)) && printf 'and: <%s>\n' "$x"
+      ! x=$(< <(false; printf continued))
+      printf 'negated: <%s>\n' "$x"
+      x=`< <(false; printf continued)`
+      printf 'backquote: <%s>\n' "$x"
+      x=$(< <([[ $- == *e* ]] && printf enabled || printf disabled))
+      printf 'option: <%s>\n' "$x"
+      set +e
+      x=$(< <(false; printf continued))
+      printf 'disabled: <%s>\n' "$x"
+
+  - name: "Process substitution redirection without input-only command substitution"
+    stdin: |
+      x=$(3< <(echo ignored))
+      printf 'other fd: <%s>\n' "$x"
+      x=$(< <(echo ignored); :)
+      printf 'command list: <%s>\n' "$x"
+      x=$(< <(echo ignored) | cat)
+      printf 'pipeline: <%s>\n' "$x"
+      x=$(< <(echo ignored) 2>/dev/null)
+      printf 'additional redirect: <%s>\n' "$x"
+
   - name: "Command substitution with only input redir in pipeline"
-    known_failure: true
     ignore_stderr: true
     test_files:
       - path: file.txt
@@ -301,16 +453,56 @@ cases:
       echo "rc=$? x=$x"
 
   - name: "Case statement with unparenthesized pattern in command substitution"
-    known_failure: true # TODO(tokenizer): #1052: the ')' ending a case pattern is taken as closing the '$('
     stdin: |
       echo "$(case x in x) echo matched;; esac)"
 
   - name: "Case statement with unparenthesized pattern in command substitution in here doc"
-    known_failure: true # TODO(tokenizer): #1052: the ')' ending a case pattern is taken as closing the '$('
     stdin: |
       cat <<EOF
       $(case x in x) echo matched;; esac)
       EOF
+
+  - name: "Case statements of several clauses in command substitution"
+    stdin: |
+      shopt -s extglob
+      echo "$(case b in (a) echo a;; b|c) echo b;; esac)"
+      echo "$(case y in @(x|y)) echo ext;; esac)"
+      echo "$(case a in a) case b in b) echo nested;; esac;; esac) after"
+
+  - name: "Case keywords as plain words in command substitution"
+    stdin: |
+      echo "$(echo case in)"
+      echo "$(echo esac)"
+      echo "$(for case in a; do echo "$case"; done)"
+      case=1; in=2
+      echo "$(echo $((case + in + (3))))"
+      echo "$(cat <<END
+      case
+      END
+      echo in)"
+
+  - name: "Case statement in a subshell in command substitution"
+    stdin: |
+      echo "$( (case x in x) echo bare;; esac) )"
+      echo "$( (case x in (x) echo paren;; esac) )"
+      echo "$(echo a; (echo b; case y in y) echo c;; esac) | cat)"
+
+  - name: "Case statement with extra blanks in command substitution"
+    stdin: |
+      echo "$(  case x  in  x)  echo ok;;  esac)"
+      echo "[$(case x in  esac)]"
+      echo "$(case x in x) echo comment;; # c
+      esac)"
+
+  - name: "Case statement after function and time -p in command substitution"
+    stdin: |
+      echo "$(function f { case x in x) echo fn;; esac; }; f)"
+      echo "$({ time -p case x in x) echo timed;; esac; } 2>/dev/null)"
+
+  - name: "Array assignment of case keywords in command substitution"
+    stdin: |
+      echo "$(a=(case x in); echo "${a[@]}")"
+      echo "$(declare -a b=(esac in); echo "${b[1]}")"
 
   - name: "Command substitution with embedded extglob"
     stdin: |
@@ -408,3 +600,83 @@ cases:
       echo "rc=$?"
       x=${ echo hi; }
       echo "x=$x"
+
+  - name: "Nested command substitution output"
+    stdin: |
+      echo "$(echo "$(echo hello)")"
+
+  - name: "Deeply nested command substitution"
+    stdin: |
+      echo "$(echo "$(echo "$(echo deep)")")"
+
+  - name: "Nested command substitution with variable"
+    stdin: |
+      x="inner"
+      result="$(echo "prefix-$(echo "$x")-suffix")"
+      echo "$result"
+
+  - name: "Nested command substitution with pipe"
+    stdin: |
+      result=$(echo "hello world" | $(echo cat))
+      echo "$result"
+
+  - name: "Command substitution in arithmetic"
+    stdin: |
+      echo "$(( $(echo 10) + $(echo 20) ))"
+
+  - name: "Nested command substitution with process substitution"
+    stdin: |
+      result=$(cat <(echo "from proc sub"))
+      echo "$result"
+
+  - name: "Triple nested command substitution"
+    stdin: |
+      echo "$(echo "a$(echo "b$(echo c)b")a")"
+
+  - name: "Command substitution with loop"
+    stdin: |
+      result=$(for i in 1 2 3; do echo "$i"; done)
+      echo "$result"
+
+  - name: "Nested backtick and dollar-paren substitution"
+    stdin: |
+      echo "$(echo `echo mixed`)"
+
+  - name: "Command substitution with conditional"
+    stdin: |
+      x=5
+      result=$(if [[ $x -gt 3 ]]; then echo "big"; else echo "small"; fi)
+      echo "$result"
+
+  - name: "Command substitution capturing stderr via redirection"
+    stdin: |
+      result=$(echo "error msg" >&2 2>&1)
+      echo "result: $result"
+
+  - name: "Command substitution with quoted closing paren"
+    stdin: |
+      f() {
+        echo $(echo ")")
+      }
+      f
+
+  - name: "Command substitution with quoted opening paren"
+    stdin: |
+      f() {
+        echo $(echo '(')
+      }
+      f
+
+  - name: "Comment in command substitution without newline fails"
+    known_failure: true
+    stdin: |
+      x=$(echo # must fail)
+
+  - name: "Comment in command substitution with newline"
+    stdin: |
+      x=$(
+        echo "a" # comment with "quote
+        echo "b"
+      )
+      echo "$x"
+

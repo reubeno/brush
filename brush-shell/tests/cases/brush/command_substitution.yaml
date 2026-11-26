@@ -155,6 +155,16 @@ cases:
       <second line>
     expected_stderr: ""
 
+  - name: "Reading a process substitution"
+    stdin: |
+      x=$(< <(echo first; echo second))
+      printf '<%s>\n' "$x"
+    expected_exit_code: 0
+    expected_stdout: |
+      <first
+      second>
+    expected_stderr: ""
+
   - name: "Here-string inside a substitution"
     stdin: |
       x=$(read -r a b <<< "1 2"; echo "$b$a")

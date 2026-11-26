@@ -10,8 +10,8 @@ use super::{ParserOptions, Tokens};
 peg::parser! {
     pub grammar token_parser<'a>(parser_options: &ParserOptions) for Tokens<'a> {
         pub(crate) rule program() -> ast::Program =
-            linebreak() c:complete_commands() linebreak() { ast::Program { complete_commands: c } } /
-            linebreak() { ast::Program { complete_commands: vec![] } }
+            linebreak() c:complete_commands() linebreak() { ast::Program { complete_commands: c, comments: vec![] } } /
+            linebreak() { ast::Program { complete_commands: vec![], comments: vec![] } }
 
         rule complete_commands() -> Vec<ast::CompleteCommand> =
             c:complete_command() ++ newline_list()
@@ -343,7 +343,8 @@ peg::parser! {
             }
 
         pub(crate) rule case_item_ns() -> ast::CaseItem =
-            s:specific_operator("(")? p:pattern() specific_operator(")") c:compound_list() {
+            sp:case_item_patterns() specific_operator(")") c:compound_list() {
+                let (s, p) = sp;
                 let start = s.map(Token::location).or_else(|| p.first().and_then(|w| w.loc.as_ref()));
                 let end = c.location();
 
@@ -351,7 +352,8 @@ peg::parser! {
 
                 ast::CaseItem { patterns: p, cmd: Some(c), post_action: ast::CaseItemPostAction::ExitCase, loc }
             } /
-            s:specific_operator("(")? p:pattern() e:specific_operator(")") linebreak() {
+            sp:case_item_patterns() e:specific_operator(")") linebreak() {
+                let (s, p) = sp;
                 let start = s.map(Token::location).or_else(|| p.first().and_then(|w| w.loc.as_ref()));
                 let end = Some(e.location());
 
@@ -360,13 +362,15 @@ peg::parser! {
             }
 
         pub(crate) rule case_item() -> ast::CaseItem =
-            s:specific_operator("(")? p:pattern() specific_operator(")") linebreak() post_action:case_item_post_action() linebreak() {
+            sp:case_item_patterns() specific_operator(")") linebreak() post_action:case_item_post_action() linebreak() {
+                let (s, p) = sp;
                 let start = s.map(Token::location).or_else(|| p.first().and_then(|w| w.loc.as_ref()));
                 let end = Some(post_action.1);
                 let loc = maybe_location(start, end);
                 ast::CaseItem { patterns: p, cmd: None, post_action: post_action.0, loc }
             } /
-            s:specific_operator("(")? p:pattern() specific_operator(")") c:compound_list() post_action:case_item_post_action() linebreak() {
+            sp:case_item_patterns() specific_operator(")") c:compound_list() post_action:case_item_post_action() linebreak() {
+                let (s, p) = sp;
                 let start = s.map(Token::location).or_else(|| p.first().and_then(|w| w.loc.as_ref()));
                 let end = Some(post_action.1);
                 let loc = maybe_location(start, end);
@@ -383,6 +387,13 @@ peg::parser! {
             non_posix_extensions_enabled() s:specific_operator(";&") {
                 (ast::CaseItemPostAction::UnconditionallyExecuteNextCaseItem, s.location())
             }
+
+        // A clause's patterns, with the `(` they may open with. Without one, an `esac` where
+        // the first pattern would start is the reserved word ending the case command, as in
+        // `(case x in x) echo;; esac)`; only `(esac)` makes it a pattern.
+        rule case_item_patterns() -> (Option<&'input Token>, Vec<ast::Word>) =
+            s:specific_operator("(") p:pattern() { (Some(s), p) } /
+            !specific_word("esac") p:pattern() { (None, p) }
 
         rule pattern() -> Vec<ast::Word> =
             (w:word() { ast::Word::from(w) }) ++ specific_operator("|")
@@ -463,13 +474,13 @@ peg::parser! {
         // allowed as function names (bash accepts e.g. `function for { :; }`).
         rule function_definition() -> ast::FunctionDefinition =
             specific_word("function") fname:fname() body:function_parens_and_body() {
-                ast::FunctionDefinition { fname, body }
+                ast::FunctionDefinition { fname, body: body.into() }
             } /
             fname:non_reserved_fname() body:function_parens_and_body() {
-                ast::FunctionDefinition { fname, body }
+                ast::FunctionDefinition { fname, body: body.into() }
             } /
             specific_word("function") fname:fname() linebreak() body:function_body() {
-                ast::FunctionDefinition { fname, body }
+                ast::FunctionDefinition { fname, body: body.into() }
             } /
             expected!("function definition")
 
@@ -779,7 +790,9 @@ fn add_pipe_extension_redirection(c: &mut ast::Command) {
             }
         }
         ast::Command::Compound(_, l) => add_to_redirect_list(l, r),
-        ast::Command::Function(f) => add_to_redirect_list(&mut f.body.1, r),
+        ast::Command::Function(f) => {
+            add_to_redirect_list(&mut std::sync::Arc::make_mut(&mut f.body).1, r);
+        }
     }
 }
 

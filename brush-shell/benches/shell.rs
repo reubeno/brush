@@ -49,6 +49,20 @@ mod unix {
         let _ = shell.eval_arithmetic(&parsed_expr).unwrap();
     }
 
+    /// Script defining `n` functions, each with a body of several commands and a `case`.
+    fn many_functions_script(n: usize) -> String {
+        use std::fmt::Write as _;
+        let mut script = String::new();
+        for i in 0..n {
+            let _ = writeln!(
+                script,
+                "f{i}() {{ local x=$1; case $x in alpha) :;; beta) :;; gamma) :;; esac; \
+                 if [[ -n $x ]]; then echo \"$x\" >/dev/null; fi; }}"
+            );
+        }
+        script
+    }
+
     /// This function defines core shell benchmarks.
     pub(crate) fn criterion_benchmark(c: &mut Criterion) {
         // Construct a runtime for us to run async code on.
@@ -70,6 +84,28 @@ mod unix {
         let shell = rt.block_on(instantiate_shell());
         c.bench_function("clone_shell_object", |b| {
             b.iter(|| black_box(shell.clone()));
+        });
+
+        // Benchmark: cloning a shell that holds many function definitions.
+        let mut shell = rt.block_on(instantiate_shell());
+        rt.block_on(run_one_command(&mut shell, &many_functions_script(500)));
+        c.bench_function("clone_shell_with_functions", |b| {
+            b.iter(|| black_box(shell.clone()));
+        });
+
+        // Benchmark: matching a word against literal `case` patterns.
+        let shell = rt.block_on(instantiate_shell());
+        c.bench_function("case_literal_patterns", |b| {
+            b.iter_batched_ref(
+                || shell.clone(),
+                |s| {
+                    rt.block_on(run_one_command(
+                        s,
+                        "for i in 1 2 3 4 5 6 7 8; do case gamma in alpha) :;; beta) :;; gamma) :;; esac; done",
+                    ));
+                },
+                criterion::BatchSize::SmallInput,
+            );
         });
 
         // Benchmark: parsing and evaluating an arithmetic expression..
@@ -131,7 +167,8 @@ mod unix {
                         },
                     ),
                     None,
-                ),
+                )
+                .into(),
             },
             &brush_core::SourceInfo::default(),
         );

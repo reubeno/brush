@@ -18,6 +18,7 @@ pub mod readline_binding;
 pub mod test_command;
 pub mod word;
 
+mod cache;
 mod error;
 mod parser;
 mod source;

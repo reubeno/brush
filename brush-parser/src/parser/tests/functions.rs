@@ -113,8 +113,68 @@ fn parse_function_with_extended_test_body() -> Result<()> {
 }
 
 #[test]
+fn parse_function_hyphenated_name() -> Result<()> {
+    let input = "debug-print() { :; }";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+#[test]
 fn parse_function_with_extended_test_body_and_redirect() -> Result<()> {
     let input = "foo() [[ -n $1 ]] 2>&1";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+#[test]
+fn parse_function_dotted_name() -> Result<()> {
+    let input = "dolib.so() { :; }";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+#[test]
+fn parse_function_keyword_hyphenated_name() -> Result<()> {
+    let input = "function debug-print-function { :; }";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+#[test]
+fn parse_function_with_escaped_quotes_in_body() -> Result<()> {
+    let input = r#"myfunc() { eval "foo() { bar \"hello\"; }"; }"#;
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+#[test]
+fn parse_function_with_eval_escaped_dollar_at() -> Result<()> {
+    let input = r#"EXPORT_FUNCTIONS() {
+    local __phase
+    for __phase in "$@"; do
+        eval "${__phase}() { ${ECLASS}_${__phase} \"\$@\"; }"
+    done
+}"#;
     let result = test_with_snapshot(input)?;
     assert_snapshot_redacted!(ParseResult {
         input,

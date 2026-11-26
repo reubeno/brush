@@ -213,7 +213,6 @@ cases:
       echo "environment match: $?"
 
   - name: "Export -a rejects assignment to dynamic associative arrays"
-    known_failure: true # TODO(dynamic): as for `declare -a`, the indexed-array conversion can't see through a dynamic value, so it converts BASH_ALIASES
     stdin: |
       strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
       alias sample=value
@@ -295,7 +294,6 @@ cases:
       env | grep MY_TEST_VAR
 
   - name: "Export with assignment through nameref"
-    known_failure: true
     stdin: |
       declare -n ref=MY_EXPORT_VAR
       export ref="exported_value"
@@ -569,3 +567,40 @@ cases:
       export +x zz_plus=1 2>/dev/null
       echo "status=$?"
       declare -p zz_plus
+
+  - name: "Export with dynamically-expanded name"
+    stdin: |
+      var=CC
+      export ${var}="dynamic-value"
+      echo "CC: $CC"
+      env | grep '^CC='
+
+  - name: "Export append with dynamically-expanded name"
+    stdin: |
+      var=ACC
+      ACC="a"
+      export ${var}+=":b"
+      echo "ACC: $ACC"
+
+  - name: "Export append to existing variable"
+    stdin: |
+      CFLAGS="-O3 -pipe"
+      export CFLAGS+=" -Wno-foo"
+      echo "CFLAGS: $CFLAGS"
+
+  - name: "Export append to already-exported variable"
+    stdin: |
+      export Z="-O3 -pipe"
+      export Z+=" -Wno-baz"
+      echo "Z: $Z"
+
+  - name: "Export append to unset variable"
+    stdin: |
+      export NEWVAR+="first"
+      echo "NEWVAR: $NEWVAR"
+
+  - name: "Export of invalid identifier via expansion"
+    stdin: |
+      var="1BAD"
+      export ${var}=x 2>/dev/null
+      echo "rc=$?"

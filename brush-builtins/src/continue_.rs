@@ -1,5 +1,4 @@
-use std::io::Write;
-
+use brush_core::writeln_async;
 use brush_core::{ExecutionControlFlow, ExecutionResult, builtins};
 
 /// Continue to the next iteration of a control-flow loop.
@@ -22,12 +21,13 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ContinueCommand 
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         // A count that isn't positive is reported.
         if self.which_loop <= 0 {
-            writeln!(
-                context.stderr(),
+            writeln_async!(
+                context.stderr_async(),
                 "{}: {}: loop count out of range",
                 context.command_name,
                 self.which_loop
-            )?;
+            )
+            .await?;
             return Ok(ExecutionResult::general_error());
         }
 

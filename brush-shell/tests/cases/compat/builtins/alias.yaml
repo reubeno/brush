@@ -325,3 +325,10 @@ cases:
       exp E1=val
       echo "E1=$E1"
       declare -p E1
+
+  - name: "Alias with dynamically-expanded assignment word"
+    stdin: |
+      shopt -s expand_aliases
+      n=greet
+      alias ${n}='echo hello'
+      greet

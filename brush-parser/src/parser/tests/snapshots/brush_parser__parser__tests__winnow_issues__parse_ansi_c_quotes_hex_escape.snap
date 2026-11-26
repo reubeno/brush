@@ -1,0 +1,83 @@
+---
+source: brush-parser/src/parser/tests/winnow_issues.rs
+expression: "ParseResult { input, result: &result }"
+---
+ParseResult(
+  input: "echo -n \"0.  \"$\'\\x\' | hexdump -C\necho -n \"1.  \"$\'\\x65\' | hexdump -C",
+  result: Program(
+    complete_commands: [
+      CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            seq: [
+              Simple(SimpleCommand(
+                word_or_name: Some(Word(
+                  value: "echo",
+                  loc: "[location]",
+                )),
+                suffix: Some(CommandSuffix([
+                  Word(Word(
+                    value: "-n",
+                    loc: "[location]",
+                  )),
+                  Word(Word(
+                    value: "\"0.  \"$\'\\x\'",
+                    loc: "[location]",
+                  )),
+                ])),
+              )),
+              Simple(SimpleCommand(
+                word_or_name: Some(Word(
+                  value: "hexdump",
+                  loc: "[location]",
+                )),
+                suffix: Some(CommandSuffix([
+                  Word(Word(
+                    value: "-C",
+                    loc: "[location]",
+                  )),
+                ])),
+              )),
+            ],
+          ),
+        ), Sequence),
+      ]),
+      CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            seq: [
+              Simple(SimpleCommand(
+                word_or_name: Some(Word(
+                  value: "echo",
+                  loc: "[location]",
+                )),
+                suffix: Some(CommandSuffix([
+                  Word(Word(
+                    value: "-n",
+                    loc: "[location]",
+                  )),
+                  Word(Word(
+                    value: "\"1.  \"$\'\\x65\'",
+                    loc: "[location]",
+                  )),
+                ])),
+              )),
+              Simple(SimpleCommand(
+                word_or_name: Some(Word(
+                  value: "hexdump",
+                  loc: "[location]",
+                )),
+                suffix: Some(CommandSuffix([
+                  Word(Word(
+                    value: "-C",
+                    loc: "[location]",
+                  )),
+                ])),
+              )),
+            ],
+          ),
+        ), Sequence),
+      ]),
+    ],
+  ),
+)

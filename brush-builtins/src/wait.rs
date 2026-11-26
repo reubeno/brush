@@ -1,5 +1,4 @@
-use std::io::Write;
-
+use brush_core::writeln_async;
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins, error};
 
 /// Wait for jobs to terminate.
@@ -48,18 +47,18 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for WaitCommand {
         if !self.ids.is_empty() {
             for id in &self.ids {
                 if id.starts_with('%') {
-                    // It's a job spec.
                     if let Some(job) = context.shell.jobs_mut().resolve_job_spec(id) {
                         // Take the job's status, but not its control flow: an `exit` in a
                         // background job ends only that job.
                         result = job.wait().await?.exit_code.into();
                     } else {
-                        writeln!(
-                            context.stderr(),
+                        writeln_async!(
+                            context.stderr_async(),
                             "{}: no such job: {}",
                             context.command_name,
                             id
-                        )?;
+                        )
+                        .await?;
 
                         result = ExecutionExitCode::GeneralError.into();
                     }
@@ -74,7 +73,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for WaitCommand {
 
             if context.shell.options().enable_job_control {
                 for job in jobs {
-                    writeln!(context.stdout(), "{job}")?;
+                    writeln_async!(context.stdout_async(), "{job}").await?;
                 }
             }
         }

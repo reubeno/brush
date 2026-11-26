@@ -1,5 +1,5 @@
 use brush_core::ExecutionResult;
-use std::io::Write;
+use brush_core::writeln_async;
 
 use brush_core::builtins;
 use brush_core::error;
@@ -60,7 +60,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EnableCommand {
                 if let Some(builtin) = context.shell.builtins_mut().get_mut(name) {
                     builtin.set_enabled(!self.disable);
                 } else {
-                    writeln!(context.stderr(), "{name}: not a shell builtin")?;
+                    writeln_async!(context.stderr_async(), "{name}: not a shell builtin").await?;
                     result = ExecutionResult::general_error();
                 }
             }
@@ -78,7 +78,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EnableCommand {
 
                 let prefix = if !builtin.is_enabled() { "-n " } else { "" };
 
-                writeln!(context.stdout(), "enable {prefix}{builtin_name}")?;
+                writeln_async!(context.stdout_async(), "enable {prefix}{builtin_name}").await?;
             }
         }
 

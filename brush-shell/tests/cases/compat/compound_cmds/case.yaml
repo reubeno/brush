@@ -183,3 +183,25 @@ cases:
       }
       f
       echo "Exit code: $?"
+
+  - name: "Case statement ending right before a closing paren"
+    stdin: |
+      (case x in x) echo ok;; esac)
+      (case x in esac)
+      (echo a; case x in y) echo no;; esac)
+      case x in (esac) echo pattern;; x) echo x;; esac
+
+  - name: "Case inside command substitution"
+    stdin: |
+      echo $(case a in a) echo ok ;; esac)
+
+  - name: "Tilde as a case pattern"
+    env:
+      HOME: /home/user
+    stdin: |
+      for s in /home/user x '~'; do
+        case $s in ~) echo "tilde: $s" ;; *) echo "other: $s" ;; esac
+        case $s in (~) echo "tilde: $s" ;; *) echo "other: $s" ;; esac
+        case $s in y|~) echo "tilde: $s" ;; *) echo "other: $s" ;; esac
+        case $s in ~a) echo "user a: $s" ;; *) echo "other: $s" ;; esac
+      done

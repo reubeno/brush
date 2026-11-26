@@ -90,6 +90,57 @@ impl<SE: ShellExtensions> ExecutionContext<'_, SE> {
         self.params.stderr(self.shell)
     }
 
+    /// Returns the standard input file, for reading asynchronously. A read from an empty
+    /// pipe gives way to the shell's other tasks rather than blocking. If there's no
+    /// standard input, every read fails.
+    pub fn stdin_async(&self) -> openfiles::async_file::AsyncOpenFile {
+        self.fd_async(
+            openfiles::OpenFiles::STDIN_FD,
+            "standard input not available",
+        )
+    }
+
+    /// Returns the standard output file, for writing asynchronously; usable with
+    /// [`write_async!`](crate::write_async) and [`writeln_async!`](crate::writeln_async),
+    /// awaiting the result. A write to a full pipe gives way to the
+    /// shell's other tasks rather than blocking. If there's no standard output, every
+    /// write fails.
+    pub fn stdout_async(&self) -> openfiles::async_file::AsyncOpenFile {
+        self.fd_async(
+            openfiles::OpenFiles::STDOUT_FD,
+            "standard output not available",
+        )
+    }
+
+    /// Returns the standard error file, for writing asynchronously; usable with
+    /// [`write_async!`](crate::write_async) and [`writeln_async!`](crate::writeln_async),
+    /// awaiting the result. A write to a full pipe gives way to the
+    /// shell's other tasks rather than blocking. If there's no standard error, every
+    /// write fails.
+    pub fn stderr_async(&self) -> openfiles::async_file::AsyncOpenFile {
+        self.fd_async(
+            openfiles::OpenFiles::STDERR_FD,
+            "standard error not available",
+        )
+    }
+
+    /// Returns the file descriptor with the given number, for reading or writing
+    /// asynchronously. Returns `None` if the file descriptor is not open.
+    ///
+    /// # Arguments
+    ///
+    /// * `fd` - The file descriptor number to retrieve.
+    pub fn try_fd_async(&self, fd: ShellFd) -> Option<openfiles::async_file::AsyncOpenFile> {
+        self.try_fd(fd)
+            .map(openfiles::async_file::AsyncOpenFile::from)
+    }
+
+    fn fd_async(&self, fd: ShellFd, missing: &'static str) -> openfiles::async_file::AsyncOpenFile {
+        self.try_fd_async(fd).unwrap_or_else(|| {
+            openfiles::OpenFile::from(crate::ioutils::FailingReaderWriter::new(missing)).into()
+        })
+    }
+
     /// Returns the file descriptor with the given number. Returns `None`
     /// if the file descriptor is not open.
     ///
@@ -794,7 +845,7 @@ pub(crate) async fn invoke_shell_function(
     mut context: ExecutionContext<'_, impl extensions::ShellExtensions>,
     args: &[CommandArg],
 ) -> Result<ExecutionSpawnResult, error::Error> {
-    let ast::FunctionBody(body, redirects) = &function.definition().body;
+    let ast::FunctionBody(body, redirects) = &*function.definition().body;
 
     // Apply any redirects specified at function definition-time.
     if let Some(redirects) = redirects {
@@ -843,6 +894,14 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
     params: &ExecutionParameters,
     s: String,
 ) -> Result<String, error::Error> {
+    let parse_result = shell.parse_string(s);
+
+    if let Ok(program) = &parse_result {
+        if let Some(redir) = try_unwrap_bare_input_redir_program(program) {
+            return invoke_input_redirection_substitution(shell, params, redir).await;
+        }
+    }
+
     // Instantiate a subshell to run the command in.
     let mut subshell = shell.clone();
 
@@ -862,13 +921,25 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
 
     let mut async_reader = sys::async_pipe::AsyncPipeReader::new(reader)?;
 
-    // The command may block writing to the pipe (e.g., a builtin writing more than the
-    // pipe's buffer holds), so don't run it on a thread that drives the runtime's I/O:
-    // that thread must stay free to deliver readiness to the reader below.
-    let cmd_join_handle = shell
-        .task_spawner()
-        .spawn_blocking(run_substitution_command(subshell, params, s))
-        .await;
+    // On a runtime with several workers, the command's writes to the pipe don't hold up
+    // the runtime (see `sys::pipe_io`), so the reader below gets to run even while the
+    // pipe is full, and the command can run as a task. With a single thread, writes
+    // that don't go through the async views (tracing, error messages, `$(< file)`) block
+    // it, and so would the reader's wait: the command goes to a thread of its own.
+    let multi_threaded = tokio::runtime::Handle::try_current()
+        .is_ok_and(|h| h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread);
+    let command = async move {
+        // TODO(source-info): review this
+        let source_info = crate::SourceInfo::from("main");
+        subshell
+            .run_parsed_result(parse_result, &source_info, &params)
+            .await
+    };
+    let cmd_join_handle = if multi_threaded {
+        shell.task_spawner().spawn(command)
+    } else {
+        shell.task_spawner().spawn_blocking(command).await
+    };
 
     let output_str = async_reader.read_to_string().await?;
 
@@ -885,32 +956,59 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
     Ok(output_str)
 }
 
-async fn run_substitution_command(
-    mut shell: Shell<impl extensions::ShellExtensions>,
-    mut params: ExecutionParameters,
-    command: String,
-) -> Result<ExecutionResult, error::Error> {
-    // Parse the string into a whole shell program.
-    let parse_result = shell.parse_string(command);
+async fn invoke_input_redirection_substitution(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    params: &ExecutionParameters,
+    redir: &ast::IoRedirect,
+) -> Result<String, error::Error> {
+    // This shorthand expands its redirection in the caller, not a subshell.
+    let mut redirect_params = params.clone();
+    redirect_params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
 
-    // Check for a command that is only an input redirection ("< file").
-    // If detected, emulate `cat file` to stdout and return immediately.
-    // If we failed to parse, then we'll fall below and handle it there.
-    if let Ok(program) = &parse_result {
-        if let Some(redir) = try_unwrap_bare_input_redir_program(program) {
-            interp::setup_redirect(&mut shell, &mut params, redir).await?;
-            std::io::copy(&mut params.stdin(&shell), &mut params.stdout(&shell))?;
-            return Ok(ExecutionResult::new(0));
+    if let Err(err) = interp::setup_redirect(shell, &mut redirect_params, redir).await {
+        if matches!(
+            err.kind(),
+            error::ErrorKind::RedirectionFailure(..) | error::ErrorKind::InvalidRedirection
+        ) {
+            if let Some(mut stderr) = params.try_stderr(shell) {
+                let _ = shell.display_error(&mut stderr, &err);
+            }
+            shell.set_last_exit_status(ExecutionExitCode::from(&err).into());
+            return Ok(String::new());
         }
+        return Err(err);
     }
 
-    // TODO(source-info): review this
-    let source_info = crate::SourceInfo::from("main");
+    let input = redirect_params.stdin(shell);
+    let (reader, writer) = sys::pipes::pipe()?;
+    let mut async_reader = sys::async_pipe::AsyncPipeReader::new(reader)?;
+    let copy_handle = shell
+        .task_spawner()
+        .spawn_blocking(copy_substitution_input(input, writer))
+        .await;
+    let output = async_reader.read_to_string().await?;
+    copy_handle.await??;
+    shell.set_last_exit_status(0);
+    Ok(output)
+}
 
-    // Handle the parse result using default shell behavior.
-    shell
-        .run_parsed_result(parse_result, &source_info, &params)
-        .await
+async fn copy_substitution_input(
+    mut input: impl std::io::Read,
+    mut output: impl std::io::Write,
+) -> std::io::Result<()> {
+    let mut buffer = [0; 8192];
+    loop {
+        match input.read(&mut buffer) {
+            Ok(0) => return Ok(()),
+            Ok(n) => output.write_all(&buffer[..n])?,
+            Err(err) if err.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                // WASM pipes need the producer task to run before a read can succeed.
+                tokio::task::yield_now().await;
+            }
+            Err(err) => return Err(err),
+        }
+    }
 }
 
 // Detects a subshell command that consists solely of a single input redirection
@@ -927,6 +1025,10 @@ fn try_unwrap_bare_input_redir_program(program: &ast::Program) -> Option<&ast::I
         return None;
     };
 
+    if matches!(item.1, ast::SeparatorOperator::Async) {
+        return None;
+    }
+
     // ...with a single pipeline (no && or || chaining)...
     let and_or = &item.0;
     if !and_or.additional.is_empty() {
@@ -935,7 +1037,7 @@ fn try_unwrap_bare_input_redir_program(program: &ast::Program) -> Option<&ast::I
 
     // ...not negated...
     let pipeline = &and_or.first;
-    if pipeline.bang {
+    if pipeline.bang || pipeline.timed.is_some() {
         return None;
     }
 
@@ -955,12 +1057,14 @@ fn try_unwrap_bare_input_redir_program(program: &ast::Program) -> Option<&ast::I
         return None;
     };
 
-    // ...that is a file input redirection to a filename, targeting stdin.
+    // ...that is an input redirection to a filename or readable process substitution,
+    // targeting stdin.
     match redir {
         ast::IoRedirect::File(
             fd,
             ast::IoFileRedirectKind::Read,
-            ast::IoFileRedirectTarget::Filename(..),
+            ast::IoFileRedirectTarget::Filename(..)
+            | ast::IoFileRedirectTarget::ProcessSubstitution(ast::ProcessSubstitutionKind::Read, _),
         ) if fd.is_none_or(|fd| fd == openfiles::OpenFiles::STDIN_FD) => Some(redir),
         _ => None,
     }
@@ -969,6 +1073,43 @@ fn try_unwrap_bare_input_redir_program(program: &ast::Program) -> Option<&ast::I
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn substitution_input_waits_for_a_cooperative_writer() -> anyhow::Result<()> {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        };
+
+        struct DelayedInput {
+            ready: Arc<AtomicBool>,
+            bytes: &'static [u8],
+        }
+
+        impl std::io::Read for DelayedInput {
+            fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+                if !self.ready.load(Ordering::SeqCst) {
+                    return Err(std::io::ErrorKind::WouldBlock.into());
+                }
+                self.bytes.read(buffer)
+            }
+        }
+
+        let ready = Arc::new(AtomicBool::new(false));
+        let input = DelayedInput {
+            ready: ready.clone(),
+            bytes: b"first\nsecond\n",
+        };
+        let writer = tokio::spawn(async move { ready.store(true, Ordering::SeqCst) });
+        let mut output = Vec::new();
+        copy_substitution_input(input, &mut output).await?;
+        writer.await?;
+        anyhow::ensure!(
+            output == b"first\nsecond\n",
+            "unexpected output: {output:?}"
+        );
+        Ok(())
+    }
 
     fn assignment(name: ast::AssignmentName, value: &str, append: bool) -> CommandArg {
         CommandArg::Assignment(ast::Assignment {
