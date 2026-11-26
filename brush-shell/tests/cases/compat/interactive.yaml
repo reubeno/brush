@@ -302,3 +302,70 @@ cases:
       #send:Enter
       #expect:finished>
       #send:Ctrl+D
+
+  - name: "An array subscript left open in an assignment continues on the next line"
+    pty: true
+    ignore_stdout: true # Prompts don't line up
+    env:
+      PS2: "cont>"
+    # Each subscript is still open at the end of its first line, so the shell prompts for more
+    # (a shell that splits the word would instead show its PS1 and report errors).
+    stdin: |
+      #expect-prompt
+      a[1 +
+      #send:Enter
+      #expect:cont>
+      1]=5
+      #send:Enter
+      #expect-prompt
+      declare -A m
+      #send:Enter
+      #expect-prompt
+      m[a
+      #send:Enter
+      #expect:cont>
+      b]=x
+      #send:Enter
+      #expect-prompt
+      b[
+      #send:Enter
+      #expect:cont>
+      1
+      #send:Enter
+      #expect:cont>
+      + 2 ]=y
+      #send:Enter
+      #expect-prompt
+      declare -p a m b > out.txt
+      #send:Enter
+      #expect-prompt
+      #send:Ctrl+D
+
+  - name: "An open bracket in an argument doesn't continue on the next line"
+    pty: true
+    ignore_stdout: true # Prompts don't line up
+    env:
+      PS2: "cont>"
+    stdin: |
+      #expect-prompt
+      echo a[1 + 2 > out.txt
+      #send:Enter
+      #expect-prompt
+      #send:Ctrl+D
+
+  - name: "Ctrl+C discards an array subscript left open"
+    pty: true
+    ignore_stdout: true # Prompts don't line up
+    env:
+      PS2: "cont>"
+    stdin: |
+      #expect-prompt
+      a[1 +
+      #send:Enter
+      #expect:cont>
+      #send:Ctrl+C
+      #expect-prompt
+      echo "elements: ${#a[@]}" > out.txt
+      #send:Enter
+      #expect-prompt
+      #send:Ctrl+D
