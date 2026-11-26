@@ -346,6 +346,7 @@ impl InputReader {
                 1,
                 PolledInput {
                     input,
+                    ready: 0,
                     // A deadline too far off to represent is no deadline at all.
                     deadline: timeout.and_then(|t| Instant::now().checked_add(t)),
                     unread: VecDeque::new(),
@@ -363,11 +364,52 @@ impl InputReader {
             .unwrap_or(false)
     }
 
+    /// Returns what to wait on, with its deadline, if the next read would block.
+    ///
+    /// Input that's already there is read right away. Otherwise the caller waits for it
+    /// where that doesn't hold up the shell's other tasks: whoever writes the input may
+    /// be one of them, as for `read < <(cmd)` inside a command substitution, and would
+    /// never get to write it if `read` blocked the thread it needs.
+    fn input_to_wait_for(&mut self) -> Option<(brush_core::openfiles::OpenFile, Option<Instant>)> {
+        if !self.input.buffer().is_empty() {
+            return None;
+        }
+
+        let polled = self.input.get_mut();
+        if polled.ready > 0 || !polled.unread.is_empty() {
+            return None;
+        }
+
+        // Asking how much is there covers the many bytes that usually follow in one
+        // go; zero leaves it to `poll` whether the input is empty or has ended.
+        if let Ok(Some(count)) = brush_core::sys::poll::bytes_ready(&polled.input)
+            && count > 0
+        {
+            polled.ready = count;
+            return None;
+        }
+
+        match brush_core::sys::poll::poll_for_input(&polled.input, Duration::ZERO) {
+            Ok(false) => Some((polled.input.clone(), polled.deadline)),
+            // Ready, or there's no telling whether a read would block: just read.
+            Ok(true) | Err(_) => None,
+        }
+    }
+
     /// Reads the next input event, handling timeout and control characters.
-    fn read_event(&mut self) -> Result<InputEvent, brush_core::Error> {
+    async fn read_event(&mut self) -> Result<InputEvent, brush_core::Error> {
         let ch = loop {
             if let Some(ch) = self.pending.pop_front() {
                 break ch;
+            }
+
+            if let Some((input, deadline)) = self.input_to_wait_for() {
+                let ready =
+                    brush_core::tasks::run_blocking(move || wait_until_readable(&input, deadline))
+                        .await??;
+                if !ready {
+                    return Ok(InputEvent::Timeout);
+                }
             }
 
             match self.input.read_char_raw() {
@@ -406,6 +448,30 @@ impl InputReader {
     }
 }
 
+/// Blocks until `input` can be read without blocking, or until `deadline` passes,
+/// returning `false` for the latter.
+fn wait_until_readable(
+    input: &brush_core::openfiles::OpenFile,
+    deadline: Option<Instant>,
+) -> Result<bool, brush_core::Error> {
+    /// How long to wait at a time with no deadline: `poll_for_input` takes a duration,
+    /// and an unbounded one can't be expressed.
+    const NO_DEADLINE_STEP: Duration = Duration::from_secs(3600);
+
+    loop {
+        let wait = match deadline {
+            Some(deadline) => deadline.saturating_duration_since(Instant::now()),
+            None => NO_DEADLINE_STEP,
+        };
+        if brush_core::sys::poll::poll_for_input(input, wait)? {
+            return Ok(true);
+        }
+        if deadline.is_some() {
+            return Ok(false);
+        }
+    }
+}
+
 /// Reads the input file one byte at a time, enforcing the deadline on every byte.
 ///
 /// Wrapped in a 1-byte `BufReader`, which gives us both the pushback a byte that turns
@@ -415,6 +481,8 @@ impl InputReader {
 struct PolledInput {
     /// The input source.
     input: brush_core::openfiles::OpenFile,
+    /// How many bytes are known to be there to read without blocking.
+    ready: usize,
     /// Optional deadline for timeout.
     deadline: Option<Instant>,
     /// Bytes given back after a read that would have blocked, to read again first.
@@ -434,7 +502,9 @@ impl Read for PolledInput {
                 return Err(std::io::ErrorKind::TimedOut.into());
             }
         }
-        self.input.read(buf)
+        let count = self.input.read(buf)?;
+        self.ready = self.ready.saturating_sub(count);
+        Ok(count)
     }
 }
 
@@ -446,6 +516,28 @@ struct LineReaderConfig {
     char_limit: Option<usize>,
     /// Whether to process backslash escapes (false for -r mode).
     process_escapes: bool,
+}
+
+/// Reads a line from `input_file`, or for a zero `timeout` (`-t 0`) only checks
+/// whether there is input to read.
+async fn read_line_from(
+    input_file: brush_core::openfiles::OpenFile,
+    config: LineReaderConfig,
+    timeout: Option<Duration>,
+    term_mode: Option<brush_core::terminal::AutoModeGuard>,
+) -> Result<ReadResult, brush_core::Error> {
+    let mut reader = InputReader::new(input_file, timeout, term_mode);
+
+    // Handle -t 0 special case: just check if input is available without reading.
+    if timeout == Some(Duration::ZERO) {
+        return Ok(if reader.check_input_available() {
+            ReadResult::InputReady
+        } else {
+            ReadResult::InputNotReady
+        });
+    }
+
+    read_line_with_reader(&mut reader, &config).await
 }
 
 /// Reads a complete line of input using the given reader and configuration.
@@ -468,7 +560,7 @@ async fn read_line_with_reader(
     let mut pending_backslash = false;
 
     loop {
-        let event = reader.read_event()?;
+        let event = reader.read_event().await?;
 
         match event {
             InputEvent::Eof => {
@@ -608,26 +700,13 @@ impl ReadCommand {
             .return_after_n_chars_no_delimiter
             .or(self.return_after_n_chars);
 
-        // Create the input reader.
-        let mut reader = InputReader::new(input_file, timeout, term_mode);
-
-        // Handle -t 0 special case: just check if input is available without reading.
-        if timeout == Some(Duration::ZERO) {
-            return Ok(if reader.check_input_available() {
-                ReadResult::InputReady
-            } else {
-                ReadResult::InputNotReady
-            });
-        }
-
-        // Configure and perform the read.
         let config = LineReaderConfig {
             delimiter,
             char_limit,
             process_escapes: !self.raw_mode,
         };
 
-        read_line_with_reader(&mut reader, &config).await
+        read_line_from(input_file, config, timeout, term_mode).await
     }
 
     fn setup_terminal_settings(
