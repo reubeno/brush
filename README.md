@@ -11,13 +11,14 @@
   <a href="https://crates.io/crates/brush-shell"><img src="https://img.shields.io/crates/v/brush-shell?style=flat-square" alt="crates.io version"/></a>
   <a href="https://crates.io/crates/brush-shell"><img src="https://img.shields.io/crates/d/brush-shell?style=flat-square" alt="crates.io downloads"/></a>
   <a href="https://github.com/reubeno/brush/actions/workflows/ci.yaml"><img src="https://img.shields.io/github/actions/workflow/status/reubeno/brush/ci.yaml?branch=main&style=flat-square&label=CI" alt="CI status"/></a>
-  <a href="brush-shell/tests/cases"><img src="https://img.shields.io/badge/compat_tests-2%2C500%2B-0d9488?style=flat-square" alt="2,500+ compatibility tests"/></a>
+  <a href="brush-shell/tests/cases"><img src="https://img.shields.io/badge/compat_tests-3%2C600%2B-0d9488?style=flat-square" alt="3,600+ compatibility tests"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-0d9488?style=flat-square" alt="MIT license"/></a>
   <a href="https://discord.gg/kPRgC9j3Tj"><img src="https://img.shields.io/badge/discord-join-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Discord"/></a>
 </p>
 
 <p align="center">
   <a href="https://brush.sh">Website</a> ·
+  <a href="https://play.brush.sh">Playground</a> ·
   <a href="https://brush.sh/getting-started/install/">Install</a> ·
   <a href="https://brush.sh/reference/compatibility/">Compatibility</a> ·
   <a href="https://brush.sh/releases/">Release notes</a> ·
@@ -108,8 +109,8 @@ Upgrading an embedded crate? See the [crate API migration guides](docs/reference
 
 ## How we test it
 
-- **Compatibility suite.** More than 2,500 [test cases](brush-shell/tests/cases) run the same script under brush and Bash and compare stdout, stderr, exit status, and filesystem side effects. Every pull request runs them on Linux (x86_64 and aarch64) and macOS, and inside Arch Linux, Debian, Fedora, NixOS, openSUSE, and Azure Linux containers.
-- **Real tools, real tests.** [End-to-end suites](e2e) exercise brush with the tools people pair with a shell: [fzf](https://github.com/junegunn/fzf), [atuin](https://github.com/atuinsh/atuin), [starship](https://github.com/starship/starship), [zoxide](https://github.com/ajeetdsouza/zoxide), [mise](https://github.com/jdx/mise), and others. Where a project has its own shell-integration tests, those run against brush; where it doesn't, we've added some.
+- **Compatibility suite.** More than 3,600 [test cases](brush-shell/tests/cases) run the same script under brush and Bash and compare stdout, stderr, exit status, and filesystem side effects. Every pull request runs them on Linux (x86_64 and aarch64) and macOS, and inside Arch Linux, Debian, Fedora, NixOS, openSUSE, and Azure Linux containers.
+- **Real tools, real tests.** [End-to-end suites](e2e) exercise brush with the tools people pair with a shell: [bash-completion](https://github.com/scop/bash-completion), [fzf](https://github.com/junegunn/fzf), [atuin](https://github.com/atuinsh/atuin), [starship](https://github.com/starship/starship), [zoxide](https://github.com/ajeetdsouza/zoxide), [mise](https://github.com/jdx/mise), and others. Where a project has its own shell-integration tests, those run against brush; where it doesn't, we've added some.
 - **Everything else.** CodeQL, dependency auditing, and benchmarks on every pull request, plus fuzz targets for the parser and the highlighter.
 - **Verifiable releases.** Binaries are built by the release workflow with signed build provenance. The install script checks each download's SHA-256 checksum and, when the GitHub CLI is available, its attestation.
 
@@ -118,7 +119,7 @@ Upgrading an embedded crate? See the [crate API migration guides](docs/reference
 | Tier | Platforms | What that means |
 |---|---|---|
 | **Supported** | _Linux_: x86_64, aarch64 (glibc, musl) <br/> macOS: aarch64 | Prebuilt binaries for every release, the full test suite on Linux x86_64 and aarch64 (glibc) and macOS aarch64, build checks for Linux musl and macOS x86_64, and daily-driver quality. |
-| **Preview**   | _Windows_: x86_64, aarch64 | Windows receives build and static checks in CI along with a small brush-specific test suite; prebuilt binaries are on the way. Parts of the shell are still missing or limited but it's functional for basic usage, particularly when paired with Microsoft's build of [coreutils for Windows](https://github.com/microsoft/coreutils). |
+| **Preview**   | _Windows_: x86_64, aarch64 | Prebuilt x86_64 and aarch64 binaries are published with releases; Windows receives build and static checks in CI along with a small brush-specific test suite. Parts of the shell are still missing or limited but it's functional for basic usage, particularly when paired with Microsoft's build of [coreutils for Windows](https://github.com/microsoft/coreutils). |
 | **Experimental** | _WASI 0.3_ | WASI builds run under wasmtime in CI. There are *many* significant gaps; more of a starting point for further experimentation.  |
 | **Builds only** | _Android_, _FreeBSD_, _NetBSD_, _OpenBSD_ | Cross-compiled in CI so they keep compiling. No official tests, binaries, or validation. |
 
