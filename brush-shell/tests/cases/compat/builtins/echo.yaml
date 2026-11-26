@@ -42,19 +42,22 @@ cases:
       echo -n
 
   - name: "echo interprets escapes with xpg_echo"
-    known_failure: true # TODO(echo): xpg_echo is not implemented
     stdin: |
       shopt -s xpg_echo
       echo 'a\tb'
       echo -E 'c\td'
+      echo -e -E 'e\tf'
+      echo -E -e 'g\th'
+      echo 'i\cj'; echo k
 
   - name: "echo takes no options in POSIX mode with xpg_echo"
-    known_failure: true # TODO(echo): xpg_echo is not implemented
     stdin: |
       set -o posix
       shopt -s xpg_echo
       echo -n 'a\tb'
       echo -e 'c'
+      echo -E 'd\te'
+      echo -- f
 
   - name: "echo takes --help, -h and a word of unknown letters as operands"
     stdin: |
