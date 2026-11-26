@@ -22,16 +22,11 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DotCommand {
 
     async fn execute(
         self,
-        context: brush_core::ExecutionContext<'_, SE>,
+        mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         // TODO(dot): Handle trap inheritance.
         context
-            .shell
-            .source_script(
-                Path::new(&self.script_path),
-                self.script_args.iter(),
-                &context.params,
-            )
+            .source_script(Path::new(&self.script_path), self.script_args.iter())
             .await
     }
 }

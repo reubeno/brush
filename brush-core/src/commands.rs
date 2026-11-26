@@ -17,6 +17,7 @@ use crate::{
     openfiles::{self, OpenFiles},
     pathsearch, processes,
     results::ExecutionSpawnResult,
+    shell::ParseErrorPolicy,
     sys, trace_categories, traps, variables,
 };
 
@@ -407,6 +408,17 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
             process_group_id: None,
             argv0: None,
         }
+    }
+
+    /// Configures this invocation for the `command` builtin.
+    ///
+    /// Skips function lookup and makes syntax errors in evaluated or sourced code
+    /// recoverable even in POSIX mode.
+    #[must_use]
+    pub const fn for_command_builtin(mut self) -> Self {
+        self.use_functions = false;
+        self.params.suppress_posix_parse_exit = true;
+        self
     }
 
     /// Executes the simple command.
@@ -845,6 +857,7 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
 ) -> Result<String, error::Error> {
     // Instantiate a subshell to run the command in.
     let mut subshell = shell.clone();
+    subshell.in_command_substitution = true;
 
     // Command substitutions don't inherit errexit by default. Only inherit it when
     // command_subst_inherits_errexit is enabled, otherwise disable errexit in the subshell.
@@ -909,7 +922,12 @@ async fn run_substitution_command(
 
     // Handle the parse result using default shell behavior.
     shell
-        .run_parsed_result(parse_result, &source_info, &params)
+        .run_parsed_result(
+            parse_result,
+            &source_info,
+            &params,
+            ParseErrorPolicy::ShellInput,
+        )
         .await
 }
 

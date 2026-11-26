@@ -15,6 +15,18 @@ cases:
       ! true
       echo "! true: $?"
 
+  - name: "Negation preserves a shell exit status"
+    stdin: |
+      ! exit 7
+      printf 'after exit\n'
+
+  - name: "Negation preserves a shell exit status under lastpipe and pipefail"
+    stdin: |
+      set -o pipefail
+      shopt -s lastpipe
+      ! (exit 7) | exit 0
+      printf 'after pipeline exit\n'
+
   - name: "Standalone negation (no command)"
     stdin: |
       !

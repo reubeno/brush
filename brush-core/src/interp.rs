@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use crate::arithmetic::{self, ExpandAndEvaluate};
+use crate::arithmetic::{self, EvalError, ExpandAndEvaluate};
 use crate::commands::{self, CommandArg};
 use crate::env::{EnvironmentLookup, EnvironmentScope, valid_variable_name};
 use crate::extensions::TaskSpawner as _;
@@ -40,6 +40,8 @@ pub struct ExecutionParameters {
     /// Whether `errexit` (exit on error) behavior should be
     /// suppressed in this execution context. Defaults to `false`.
     pub suppress_errexit: bool,
+    /// Whether `command` suppresses POSIX syntax-error exits in evaluated or sourced code.
+    pub(crate) suppress_posix_parse_exit: bool,
 }
 
 impl ExecutionParameters {
@@ -412,8 +414,8 @@ impl Execute for ast::Pipeline {
             wait_for_pipeline_processes_and_update_status(self, spawn_results, shell, &params)
                 .await?;
 
-        // Invert the exit code if requested.
-        if self.bang {
+        // Negation applies to a pipeline's status. A shell exit carries its own status.
+        if self.bang && !result.is_exit() {
             result.exit_code = ExecutionExitCode::from(if result.is_success() { 1 } else { 0 });
         }
 
@@ -633,8 +635,8 @@ async fn wait_for_pipeline_processes_and_update_status(
         }
     }
 
-    // Apply pipefail semantics if enabled
-    if shell.options().return_last_failure_from_pipeline {
+    // Negation preserves a shell exit, including its original status.
+    if shell.options().return_last_failure_from_pipeline && !(pipeline.bang && result.is_exit()) {
         if let Some(failure_exit_code) = last_failure_exit_code {
             result.exit_code = failure_exit_code;
         }
@@ -1360,8 +1362,6 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
         } else {
             // No command to run; assignments must be applied to this shell.
             for assignment in assignments {
-                // Apply the assignment. Don't mark as fatal - let errors be handled
-                // at the program level so multiple complete_commands can execute independently.
                 apply_assignment(
                     assignment,
                     &mut context.shell,
@@ -1370,7 +1370,33 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                     None,
                     EnvironmentScope::Global,
                 )
-                .await?;
+                .await
+                .map_err(|err| {
+                    let fatal_in_substitution = match err.kind() {
+                        error::ErrorKind::EvalError(error) => match error {
+                            EvalError::DivideByZero
+                            | EvalError::NegativeExponent
+                            | EvalError::ParseError(_)
+                            | EvalError::ExpandingUnsetVariable(_)
+                            | EvalError::RecursionLimitExceeded => true,
+                            // Expansion and variable access can wrap recoverable errors.
+                            EvalError::FailedToTokenizeExpression
+                            | EvalError::FailedToExpandExpression(_)
+                            | EvalError::FailedToAccessArray
+                            | EvalError::FailedToUpdateEnvironment => false,
+                        },
+                        error::ErrorKind::ReadonlyVariable
+                        | error::ErrorKind::ArrayIndexOutOfRange(_)
+                        | error::ErrorKind::AssigningListToArrayMember => true,
+                        _ => false,
+                    };
+
+                    if fatal_in_substitution {
+                        err.into_fatal_in_command_substitution()
+                    } else {
+                        err
+                    }
+                })?;
             }
 
             // Assignment-only statements clear $_ (set to empty string).

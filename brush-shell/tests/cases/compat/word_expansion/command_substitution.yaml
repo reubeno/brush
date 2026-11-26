@@ -29,6 +29,87 @@ cases:
       x=$(false) && echo "1. Made it past false"
       y=$(true) && echo "2. Made it past true"
 
+  - name: "Command substitution across newlines stops on an arithmetic expansion error"
+    ignore_stderr: true
+    stdin: |
+      value=$(
+        printf 'before\n'
+        x=$((1 / 0))
+        printf 'after\n'
+      )
+      printf 'value=<%s> status=%s\n' "$value" "$?"
+
+  - name: "Command substitution across newlines stops on an assignment error"
+    ignore_stderr: true
+    stdin: |
+      readonly guard=original
+      value=$(
+        guard=replaced
+        printf 'after readonly assignment\n'
+      )
+      printf 'value=<%s> status=%s\n' "$value" "$?"
+
+      a=(x)
+      value=$(
+        a[-2]=y
+        printf 'after invalid array assignment\n'
+      )
+      printf 'value=<%s> status=%s\n' "$value" "$?"
+
+      value=$(
+        a[1]=(bad nope)
+        printf 'after list assignment to an array element\n'
+      )
+      printf 'value=<%s> status=%s\n' "$value" "$?"
+
+  - name: "Command substitution across newlines stops on an error inside eval"
+    ignore_stderr: true
+    stdin: |
+      readonly guard=original
+      value=$(
+        ! eval 'guard=replaced
+        printf "after assignment in eval\n"'
+        printf 'after eval\n'
+      )
+      printf 'value=<%s> status=%s\n' "$value" "$?"
+
+  - name: "Command substitution across newlines stops on an error with an interactive parent"
+    ignore_stderr: true
+    args:
+      - "-i"
+      - "-c"
+      - |
+        value=$(
+          [[ $- == *i* ]] && printf 'interactive flag set\n'
+          x=$((1 / 0))
+          printf 'after expansion\n'
+        )
+        printf 'value=<%s> status=%s\n' "$value" "$?"
+
+  - name: "Command substitution across newlines continues after ordinary command failures"
+    ignore_stderr: true
+    stdin: |
+      value=$(
+        false
+        printf 'after false\n'
+        : < missing_input.txt
+        printf 'after failed redirection\n'
+        { printf 'inside group\n'; } < missing_input.txt
+        printf 'after failed group redirection\n'
+        (( 1 / 0 ))
+        printf 'after failed arithmetic command\n'
+        inner=$(< missing_input.txt)
+        printf 'nested substitution status=%s\n' "$?"
+        x=$(( $(< missing_input.txt) + 1 ))
+        printf 'nested substitution in arithmetic status=%s\n' "$?"
+        a=(x)
+        x=$((a[-2]))
+        printf 'after invalid arithmetic array read\n'
+        x=$((a[-2]=2))
+        printf 'after invalid arithmetic array assignment\n'
+      )
+      printf 'value=<%s> status=%s\n' "$value" "$?"
+
   - name: "Command substitution with exec"
     stdin: |
       x=$(exec echo hi)

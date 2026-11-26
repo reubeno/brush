@@ -266,6 +266,7 @@ impl<SE: extensions::ShellExtensions> Default for Shell<SE> {
             last_exit_status_change_count: 0,
             last_pipeline_statuses: vec![0],
             depth: 0,
+            in_command_substitution: false,
             command_number: 1,
             name: None,
             args: vec![],
