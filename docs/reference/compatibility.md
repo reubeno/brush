@@ -4,7 +4,7 @@ This document details `brush`'s compatibility with `bash`, including supported f
 
 ## Overview
 
-`brush` aims for high compatibility with `bash`. We validate this through **2,500+ compatibility test cases** that compare behavior against `bash` as an oracle, plus [end-to-end suites](../../e2e/README.md) that test popular shell tools (e.g., fzf, atuin, starship, etc.) with `brush`.
+`brush` aims for high compatibility with `bash`. We validate this through **3,600+ compatibility test cases** that compare behavior against `bash` as an oracle, plus [end-to-end suites](../../e2e/README.md) that test popular shell tools and suites (e.g., `bash-completion`, `fzf`, `atuin`, `starship`, `mise`, `nvm`, `oh-my-git`, `zoxide`) with `brush`.
 
 **Compatibility snapshot:** Production-ready for most use cases. Your `.bashrc`, aliases, functions, and completions should "just work."
 
@@ -23,7 +23,7 @@ This document details `brush`'s compatibility with `bash`, including supported f
 
 ### Expansions
 
-- Brace expansion: `{a,b,c}`, `{1..10}`, `{a..z}`
+- Brace expansion: `{a,b,c}`, `{1..10}`, `{01..10}`, `{a..z}`
 - Parameter expansion: `${var:-default}`, `${var:+set}`, `${var#pattern}`, `${var%pattern}`, `${var//find/replace}`, etc.
 - Command substitution: `$(cmd)`, `` `cmd` ``
 - Arithmetic expansion: `$((expr))`
@@ -63,15 +63,15 @@ This document details `brush`'s compatibility with `bash`, including supported f
 ### Dynamic Variables
 
 - `RANDOM`, `SRANDOM`
-- `LINENO`, `FUNCNAME`, `BASH_SOURCE`
+- `LINENO`, `FUNCNAME`, `BASH_SOURCE`, `BASH_ARGV`, `BASH_ARGC`
 - `EPOCHSECONDS`, `EPOCHREALTIME`
 - `SECONDS`
-- `PWD`, `OLDPWD`
+- `PWD`, `OLDPWD`, `$_`
 - `BASH_VERSINFO`, `BASH_VERSION`
 
 ### Programmable Completion
 
-- Compatible with [`bash-completion`](https://github.com/scop/bash-completion)
+- Compatible with [`bash-completion`](https://github.com/scop/bash-completion) (96%+ of upstream tests passing)
 - Git, Docker, systemctl, etc. completions work out of the box
 - `complete`, `compgen`, `compopt` builtins
 
@@ -166,15 +166,11 @@ These areas have known differences from `bash` in edge cases. Most users won't e
 
 ### IFS (Input Field Separator)
 
-There are ~10 known edge cases where IFS word splitting behavior differs from `bash`, particularly around:
-
-- Non-whitespace IFS characters and empty field creation
-- Mixed whitespace and non-whitespace IFS
-- Leading/trailing delimiter handling
+Core `IFS` word splitting and scalar joining match `bash` closely; ~5 known edge cases remain around `declare` compound array assignments, namerefs to `IFS`, and unquoted `$@` inside parameter expansion words.
 
 ### `printf` Format Specifiers
 
-Some advanced `printf` format specifiers behave differently (~8 known cases), particularly features not supported by the underlying `uucore` library.
+Some advanced `printf` format specifiers behave differently (~12 known cases), particularly features not supported by the underlying `uucore` library.
 
 ### Arithmetic Expressions
 
@@ -187,9 +183,9 @@ Some complex alias expansion scenarios differ from `bash` (see GitHub issues [#5
 
 ## Test Suite Statistics
 
-- **Total test cases:** 2,500+ (plus a small set of `brush`-specific cases)
-- **Known failures:** ~470, marked `known_failure` in the case files so a fix that makes one pass is reported rather than absorbed
-- **Largest groups of known failures:** nameref behavior, `declare` edge cases, `BASH_COMMAND` inside traps, signal handling, `wait` with job specs, and alias expansion
+- **Total test cases:** 3,600+ (plus a small set of `brush`-specific cases)
+- **Known failures:** ~870, marked `known_failure` in the case files so a fix that makes one pass is reported rather than absorbed
+- **Largest groups of known failures:** nameref behavior, `declare` edge cases, signal handling, `trap`, CLI/argument edge cases, error handling, `compgen`, and `extdebug`/`functrace`
 
 The test suite runs on every PR and compares behavior against `bash` as an oracle.
 
@@ -212,7 +208,7 @@ Found a script that works in `bash` but not in `brush`?
 ## Tracking Progress
 
 - **GitHub Issues:** Track specific compatibility work
-- **Test Suite:** 2,500+ tests run on every PR
+- **Test Suite:** 3,600+ tests run on every PR
 - **This Document:** Updated as features are implemented
 
 ## Related Resources
