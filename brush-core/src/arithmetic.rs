@@ -192,6 +192,35 @@ fn get_var_value<'a>(
     Ok("".into())
 }
 
+/// Resolves an array subscript to the string used to index the array named `name`.
+///
+/// For associative arrays, the subscript text is the key and is not evaluated (as in bash,
+/// `m[k]` refers to the key `k`). Otherwise the subscript is evaluated arithmetically.
+fn resolve_array_index(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    name: &str,
+    index: &ast::ArithmeticArrayIndex,
+    depth: u32,
+) -> Result<String, EvalError> {
+    let is_assoc = shell.env().get(name).is_some_and(|(_, var)| {
+        matches!(
+            var.value(),
+            variables::ShellValue::AssociativeArray(_)
+                | variables::ShellValue::Unset(variables::ShellValueUnsetType::AssociativeArray)
+        )
+    });
+
+    if is_assoc {
+        return Ok(index.raw.clone());
+    }
+
+    let expr = index
+        .expr
+        .as_deref()
+        .ok_or_else(|| EvalError::ParseError(index.raw.clone()))?;
+    Ok(eval_expr_impl(expr, shell, depth)?.to_string())
+}
+
 fn deref_lvalue(
     shell: &mut Shell<impl extensions::ShellExtensions>,
     lvalue: &ast::ArithmeticTarget,
@@ -199,8 +228,8 @@ fn deref_lvalue(
 ) -> Result<i64, EvalError> {
     let value_str: Cow<'_, str> = match lvalue {
         ast::ArithmeticTarget::Variable(name) => get_var_value(shell, name.as_str())?,
-        ast::ArithmeticTarget::ArrayElement(name, index_expr) => {
-            let index_str = eval_expr_impl(index_expr, shell, depth)?.to_string();
+        ast::ArithmeticTarget::ArrayElement(name, index) => {
+            let index_str = resolve_array_index(shell, name, index, depth)?;
 
             shell
                 .env()
@@ -380,8 +409,8 @@ fn assign(
                 )
                 .map_err(|_err| EvalError::FailedToUpdateEnvironment)?;
         }
-        ast::ArithmeticTarget::ArrayElement(name, index_expr) => {
-            let index_str = eval_expr_impl(index_expr, shell, depth)?.to_string();
+        ast::ArithmeticTarget::ArrayElement(name, index) => {
+            let index_str = resolve_array_index(shell, name, index, depth)?;
 
             shell
                 .env_mut()
