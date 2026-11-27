@@ -18,7 +18,7 @@ use std::collections::BTreeMap;
 /// canonical name (e.g. both `Path` and `PATH` are set to different values),
 /// the conflict is logged and the last-seen value wins.
 pub(crate) fn get_host_env_vars() -> impl Iterator<Item = (String, String)> {
-    collect_host_env_vars(std::env::vars())
+    collect_host_env_vars(crate::sys::lossy_host_env_vars())
 }
 
 /// Collects and normalizes a set of environment variables. Exposed as a

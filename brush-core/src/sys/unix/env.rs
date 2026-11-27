@@ -2,7 +2,7 @@
 
 /// Retrieves environment variables from the host process.
 ///
-/// On Unix, this is a direct passthrough to [`std::env::vars()`].
+/// A name or value that isn't valid UTF-8 has its invalid bytes replaced with U+FFFD.
 pub(crate) fn get_host_env_vars() -> impl Iterator<Item = (String, String)> {
-    std::env::vars()
+    crate::sys::lossy_host_env_vars()
 }
