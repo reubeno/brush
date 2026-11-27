@@ -533,3 +533,15 @@ cases:
       [[ -n $(printf --help 2>/dev/null) ]] && echo "help on stdout"
       printf -v x --help >/dev/null 2>&1; echo "after -v: rc=$?"
       printf -- --help; echo " after --: rc=$?"
+
+  - name: "printf -v into the @ and * keys of an associative array"
+    ignore_stderr: true # error wording differs
+    stdin: |
+      declare -A m
+      printf -v 'm[@]' %s at; echo "rc=$?"
+      printf -v 'm[*]' %s star; echo "rc=$?"
+      for k in "${!m[@]}"; do echo "$k=${m[$k]}"; done | sort
+
+      a=(keep)
+      printf -v 'a[@]' %s x; echo "rc=$?"
+      declare -p a
