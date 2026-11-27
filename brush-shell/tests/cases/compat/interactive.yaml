@@ -210,7 +210,6 @@ cases:
       #expect:done
 
   - name: "A fatal error in a function drops the rest of the interactive line"
-    known_failure: true # TODO(interactive): runs the rest of the line
     pty: true
     ignore_stdout: true # Prompts don't line up
     stdin: |

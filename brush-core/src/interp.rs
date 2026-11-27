@@ -1350,6 +1350,9 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                 Err(err) if in_owned_shell => {
                     Ok(parent_shell.end_subshell(Err(err), || Some(stderr)).into())
                 }
+                // An error that escaped a function's body abandons the command
+                // that called the function, as if it had happened there.
+                Err(err) if err.is_from_function_body() => Err(err),
                 Err(err) => {
                     let _ = parent_shell.display_error(&mut stderr, &err);
 
