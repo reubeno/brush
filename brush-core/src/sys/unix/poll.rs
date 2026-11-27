@@ -89,6 +89,33 @@ fn poll_fd_for_input(fd: BorrowedFd<'_>, deadline: Option<Instant>) -> std::io::
     }
 }
 
+/// Returns how many bytes can be read from an open file without blocking, as `FIONREAD`
+/// reports them, for a pipe, FIFO, socket or terminal.
+///
+/// Returns `None` for a regular file, where `FIONREAD` counts the bytes left before end of
+/// file rather than data waiting to be read, for anything without a file descriptor, and on
+/// error.
+///
+/// # Arguments
+///
+/// * `file` - The open file to check.
+pub fn pending_bytes(file: &OpenFile) -> Option<usize> {
+    use std::os::fd::AsRawFd as _;
+
+    let fd = file.try_borrow_as_fd().ok()?;
+    if is_regular_file(fd) {
+        return None;
+    }
+    let mut count: libc::c_int = 0;
+    // SAFETY: `fd` is a valid descriptor for the duration of the call, and `FIONREAD` writes
+    // a single `c_int` through the pointer, which points to `count`.
+    let result = unsafe { libc::ioctl(fd.as_raw_fd(), libc::FIONREAD, &raw mut count) };
+    if result < 0 {
+        return None;
+    }
+    usize::try_from(count).ok()
+}
+
 /// Checks if a file descriptor refers to a regular file.
 ///
 /// Regular files are always "ready" for reading (poll has no effect).
@@ -128,6 +155,29 @@ mod tests {
 
         let (reader, _writer) = std::io::pipe()?;
         assert!(!is_regular_file(reader.as_fd()));
+        Ok(())
+    }
+
+    /// Both ends of a pipe report what's been written to it and not yet read; a regular file
+    /// reports nothing.
+    #[test]
+    fn pending_bytes_counts_a_pipes_unread_bytes() -> std::io::Result<()> {
+        use std::io::{Read as _, Write as _};
+
+        let (reader, writer) = std::io::pipe()?;
+        let (mut reader, mut writer) = (OpenFile::from(reader), OpenFile::from(writer));
+        assert_eq!(pending_bytes(&reader), Some(0));
+
+        writer.write_all(b"hello")?;
+        assert_eq!(pending_bytes(&reader), Some(5));
+
+        let mut buf = [0; 2];
+        reader.read_exact(&mut buf)?;
+        assert_eq!(pending_bytes(&reader), Some(3));
+
+        let mut file = tempfile::tempfile()?;
+        file.write_all(b"hello")?;
+        assert_eq!(pending_bytes(&OpenFile::from(file)), None);
         Ok(())
     }
 

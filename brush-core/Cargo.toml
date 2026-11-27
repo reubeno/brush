@@ -60,6 +60,11 @@ tokio = { version = "1.52.3", features = [
 ] }
 
 [target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Pipes",
+] }
 check_elevation = "0.3.0"
 whoami = "2.1.1"
 
