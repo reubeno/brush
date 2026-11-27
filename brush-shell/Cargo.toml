@@ -161,7 +161,7 @@ walkdir = "2.5.0"
 which = "8.0.2"
 
 [target.'cfg(unix)'.dev-dependencies]
-nix = { version = "0.31.2" }
+nix = { version = "0.32.0" }
 
 # expectrl's pty support (via ptyprocess) is limited to these platforms;
 # the interactive tests that rely on it are gated accordingly.
