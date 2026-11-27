@@ -28,7 +28,7 @@ brush-parser = { version = "^0.5.0", path = "../brush-parser" }
 bon = "3.9.1"
 cached = "2.0.2"
 cfg-if = "1.0.4"
-jiff = "0.2.43"
+jiff = "1.0.1"
 color-print = "0.3.7"
 fancy-regex = "0.20.0"
 futures = "0.3.32"
@@ -66,7 +66,7 @@ whoami = "2.1.1"
 [target.'cfg(unix)'.dependencies]
 command-fds = "0.3.2"
 libc = "0.2.183"
-nix = { version = "0.31.2", features = [
+nix = { version = "0.32.0", features = [
     "fs",
     "poll",
     "process",
@@ -81,7 +81,7 @@ uzers = "0.12.2"
 
 [target.wasm32-unknown-unknown.dependencies]
 getrandom = { version = "0.4.2", features = ["wasm_js"] }
-jiff = { version = "0.2.43", features = ["js"] }
+jiff = { version = "1.0.1", features = ["js"] }
 uuid = { version = "1", features = ["js"] }
 
 [dev-dependencies]

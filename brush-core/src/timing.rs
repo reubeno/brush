@@ -90,15 +90,15 @@ pub fn format_duration_posixly(duration: &std::time::Duration) -> String {
 /// platform's configuration; it doesn't (yet) follow `TZ` set in the shell. A `TZ` that
 /// can't be resolved means UTC; that includes the `posix/` and `right/` prefixed names and
 /// POSIX strings that name a DST zone without giving its rules (e.g. `CET-1CEST`).
-pub(crate) fn to_local(timestamp: jiff::Timestamp) -> jiff::Zoned {
-    timestamp.to_zoned(jiff::tz::TimeZone::system())
+pub(crate) fn to_local(timestamp: jiff::Timestamp) -> jiff::ZonedDateTime {
+    timestamp.to_zoned_datetime(jiff::tz::TimeZone::system())
 }
 
 /// Formats a date/time with a `strftime`-style format string, as the C library does in
 /// the POSIX locale: `%c`, `%x`, `%X`, and `%r` take their POSIX forms, and a directive
 /// that can't be rendered is left as written while the rest of the format is still
 /// rendered.
-pub(crate) fn strftime(datetime: &jiff::Zoned, format: &str) -> String {
+pub(crate) fn strftime(datetime: &jiff::ZonedDateTime, format: &str) -> String {
     let config = jiff::fmt::strtime::Config::new()
         .custom(jiff::fmt::strtime::PosixCustom::new())
         .lenient(true);
@@ -116,7 +116,7 @@ mod tests {
 
     #[test]
     fn test_strftime() {
-        let dt: jiff::Zoned = "2024-12-05T13:04:05.789Z[UTC]".parse().unwrap();
+        let dt: jiff::ZonedDateTime = "2024-12-05T13:04:05.789Z[UTC]".parse().unwrap();
         let cases = [
             ("%Y-%m-%d %H:%M:%S", "2024-12-05 13:04:05"),
             ("%c", "Thu Dec  5 13:04:05 2024"),

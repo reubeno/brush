@@ -162,7 +162,7 @@ uucore = { version = "0.12.0", default-features = false, features = [
 uucore = { version = "0.12.0", default-features = false, features = ["format"] }
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.31.2", features = [
+nix = { version = "0.32.0", features = [
     "fs",
     "process",
     "resource",
