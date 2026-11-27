@@ -1,5 +1,4 @@
-use std::io::Write;
-
+use brush_core::writeln_async;
 use brush_core::{ExecutionResult, builtins, timing};
 
 /// Report on usage time.
@@ -22,21 +21,23 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for TimesCommand {
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         let (self_user, self_system) = brush_core::sys::resource::get_self_user_and_system_time()?;
-        writeln!(
-            context.stdout(),
+        writeln_async!(
+            context.stdout_async(),
             "{} {}",
             timing::format_duration_non_posixly(&self_user),
             timing::format_duration_non_posixly(&self_system),
-        )?;
+        )
+        .await?;
 
         let (children_user, children_system) =
             brush_core::sys::resource::get_children_user_and_system_time()?;
-        writeln!(
-            context.stdout(),
+        writeln_async!(
+            context.stdout_async(),
             "{} {}",
             timing::format_duration_non_posixly(&children_user),
             timing::format_duration_non_posixly(&children_system),
-        )?;
+        )
+        .await?;
 
         Ok(ExecutionResult::success())
     }

@@ -1,9 +1,10 @@
+use brush_core::writeln_async;
 use itertools::Itertools;
-use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins};
 
 use crate::write_alias_definition;
+use tokio::io::AsyncWriteExt as _;
 
 /// Manage aliases within the shell.
 #[derive(winnow_args::Args)]
@@ -35,7 +36,9 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for AliasCommand {
         if self.print || self.aliases.is_empty() {
             // Aliases are stored unordered; bash lists them sorted by name.
             for (name, value) in context.shell.aliases().iter().sorted() {
-                write_alias_definition(context.stdout(), name, value, false, reusable)?;
+                let mut text = Vec::new();
+                write_alias_definition(&mut text, name, value, false, reusable)?;
+                context.stdout_async().write_all(&text).await?;
             }
         } else {
             for alias in &self.aliases {
@@ -47,13 +50,16 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for AliasCommand {
                         .aliases_mut()
                         .insert(name.to_owned(), unexpanded_value.to_owned());
                 } else if let Some(value) = context.shell.aliases().get(alias) {
-                    write_alias_definition(context.stdout(), alias, value, false, reusable)?;
+                    let mut text = Vec::new();
+                    write_alias_definition(&mut text, alias, value, false, reusable)?;
+                    context.stdout_async().write_all(&text).await?;
                 } else {
-                    writeln!(
-                        context.stderr(),
+                    writeln_async!(
+                        context.stderr_async(),
                         "{}: {alias}: not found",
                         context.command_name
-                    )?;
+                    )
+                    .await?;
                     exit_code = ExecutionResult::general_error();
                 }
             }
