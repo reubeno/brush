@@ -147,6 +147,55 @@ cases:
       printf "%c%c%c\n" 72 101 121
 
   # Width and precision tests
+  - name: "printf overflowing width and precision"
+    skip_oracle: true
+    ignore_stderr: true
+    # Bash before 5.3 does not diagnose these overflows consistently.
+    expected_stdout: |
+      [x]
+      rc=1
+      [xyz]
+      rc=1
+      [rc=1
+      [rc=1
+    expected_exit_code: 0
+    stdin: |
+      printf '[%*s]\n' 99999999999 x; echo "rc=$?"
+      printf '[%.*s]\n' 99999999999 xyz; echo "rc=$?"
+      printf '[%99999999999s]\n' x; echo "rc=$?"
+      printf '[%.99999999999s]\n' xyz; echo "rc=$?"
+
+  - name: "printf negative and missing dynamic modifiers"
+    skip_oracle: true
+    ignore_stderr: true
+    expected_stdout: |
+      [xy   ] rc=0
+      [  xyz] rc=0
+      [] rc=0
+      [x] rc=1
+      [xyz] rc=1
+    expected_exit_code: 0
+    stdin: |
+      printf '[%*.*s]' -5 2 xyz; echo " rc=$?"
+      printf '[%*.*s]' 5 -1 xyz; echo " rc=$?"
+      printf '[%*s]'; echo " rc=$?"
+      printf '[%*s]' -99999999999 x; echo " rc=$?"
+      printf '[%.*s]' -99999999999 xyz; echo " rc=$?"
+
+  - name: "printf overflowing modifiers preserves other fields and assignment"
+    skip_oracle: true
+    ignore_stderr: true
+    expected_stdout: |
+      [    x][xy]
+      rc=1
+      rc=1 value=[][  y]
+    expected_exit_code: 0
+    stdin: |
+      printf '[%5.*s][%*.2s]\n' 99999999999 x 99999999999 xyz
+      echo "rc=$?"
+      printf -v value '[%*s]' 99999999999 '' 3 y
+      echo "rc=$? value=$value"
+
   - name: "printf width formatting"
     stdin: |
       printf "%5s|\n" "hi"
