@@ -168,7 +168,7 @@ repos:
   # Cargo.toml or Cargo.lock is among the files.
   # ---------------------------------------------------------------------------
   - repo: https://github.com/EmbarkStudios/cargo-deny
-    rev: bca0dde53651ee946720e4540b5ce2610bec8f06 # frozen: 0.20.2
+    rev: 6d512893fcfea934e8e69c5df44132a4970c42d0 # frozen: 0.22.0
     hooks:
       - id: cargo-deny
         alias: deps
@@ -183,7 +183,7 @@ repos:
   # hook would avoid it, but Dependabot skips those.
   # ---------------------------------------------------------------------------
   - repo: https://github.com/boidolr/ast-grep-pre-commit
-    rev: 75977df6cbb0d9bc5de1c97a3d44f6bdd605d4eb # frozen: 0.51.2
+    rev: c0d74f483c613beb32e530be5623c8608526ceb3 # frozen: 0.51.3
     hooks:
       - id: ast-grep
         alias: structure
