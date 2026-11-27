@@ -187,28 +187,14 @@ impl Pattern {
         // the argument even when nullglob is enabled.
         if self.pieces.is_empty() {
             return Ok(PatternExpansionResult::NoGlob);
-
-        // Similarly, if we're *confident* the pattern doesn't require expansion, then we
-        // know there's a single expansion (before filtering).
-        } else if !self.pieces.iter().any(|piece| {
-            matches!(piece, PatternPiece::Pattern(_))
-                && requires_expansion(piece.as_str(), self.enable_extended_globbing)
-        }) {
-            let concatenated: String = self.pieces.iter().map(|piece| piece.as_str()).collect();
-
-            if let Some(filter) = path_filter
-                && !filter(Path::new(&concatenated))
-            {
-                // No globs, but the literal was filtered out. Return NoGlob
-                // (not Expanded) so that callers don't mistake this for a
-                // failed glob match (which would trigger failglob).
-                return Ok(PatternExpansionResult::NoGlob);
-            }
-
-            return Ok(PatternExpansionResult::Expanded(vec![concatenated]));
         }
 
-        tracing::debug!(target: trace_categories::PATTERN, "expanding pattern: {self:?}");
+        let component_requires_expansion = |component: &PatternWord| {
+            component.iter().any(|piece| {
+                matches!(piece, PatternPiece::Pattern(_))
+                    && requires_expansion(piece.as_str(), self.enable_extended_globbing)
+            })
+        };
 
         let mut components: Vec<PatternWord> = vec![];
         for piece in &self.pieces {
@@ -231,6 +217,36 @@ impl Pattern {
                 components.push(vec![piece]);
             }
         }
+
+        // An extglob group like `@(a/b)` is still a pattern even though the `/` splits it
+        // across components, so look for those in the unsplit pieces.
+        let has_extglob_group = self.enable_extended_globbing
+            && self.pieces.iter().any(|piece| {
+                matches!(piece, PatternPiece::Pattern(_))
+                    && requires_expansion(piece.as_str(), true)
+                    && !requires_expansion(piece.as_str(), false)
+            });
+
+        // Similarly, if we're *confident* the pattern doesn't require expansion, then we
+        // know there's a single expansion (before filtering). We check each path component
+        // on its own, since a bracket expression can't span a `/` (e.g., `[a/b]` isn't a
+        // pattern at all).
+        if !has_extglob_group && !components.iter().any(component_requires_expansion) {
+            let concatenated: String = self.pieces.iter().map(|piece| piece.as_str()).collect();
+
+            if let Some(filter) = path_filter
+                && !filter(Path::new(&concatenated))
+            {
+                // No globs, but the literal was filtered out. Return NoGlob
+                // (not Expanded) so that callers don't mistake this for a
+                // failed glob match (which would trigger failglob).
+                return Ok(PatternExpansionResult::NoGlob);
+            }
+
+            return Ok(PatternExpansionResult::Expanded(vec![concatenated]));
+        }
+
+        tracing::debug!(target: trace_categories::PATTERN, "expanding pattern: {self:?}");
 
         // Check if the path appears to be absolute by inspecting the first component.
         // On Unix, a leading `/` produces an empty first component. On Windows, a
@@ -266,10 +282,7 @@ impl Pattern {
         };
 
         for component in components {
-            if !component.iter().any(|piece| {
-                matches!(piece, PatternPiece::Pattern(_))
-                    && requires_expansion(piece.as_str(), self.enable_extended_globbing)
-            }) {
+            if !component_requires_expansion(&component) {
                 let flattened = component
                     .iter()
                     .map(PatternPiece::to_unescaped_str)
