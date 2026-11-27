@@ -191,7 +191,10 @@ fn format_current_working_directory(
     working_dir_str
 }
 
-fn format_time(datetime: &jiff::Zoned, format: &brush_parser::prompt::PromptTimeFormat) -> String {
+fn format_time(
+    datetime: &jiff::ZonedDateTime,
+    format: &brush_parser::prompt::PromptTimeFormat,
+) -> String {
     let fmt = match format {
         brush_parser::prompt::PromptTimeFormat::TwelveHourAM => "%I:%M %p",
         brush_parser::prompt::PromptTimeFormat::TwelveHourHHMMSS => "%I:%M:%S",
@@ -202,7 +205,10 @@ fn format_time(datetime: &jiff::Zoned, format: &brush_parser::prompt::PromptTime
     crate::timing::strftime(datetime, fmt)
 }
 
-fn format_date(datetime: &jiff::Zoned, format: &brush_parser::prompt::PromptDateFormat) -> String {
+fn format_date(
+    datetime: &jiff::ZonedDateTime,
+    format: &brush_parser::prompt::PromptDateFormat,
+) -> String {
     let fmt = match format {
         brush_parser::prompt::PromptDateFormat::WeekdayMonthDate => "%a %b %d",
         brush_parser::prompt::PromptDateFormat::Custom(fmt) => fmt.as_str(),
@@ -219,7 +225,7 @@ mod tests {
     fn test_format_time() {
         // Create a well-known test date/time.
         let dt = "2024-12-25T13:34:56.789Z[UTC]"
-            .parse::<jiff::Zoned>()
+            .parse::<jiff::ZonedDateTime>()
             .unwrap();
 
         assert_eq!(
@@ -248,7 +254,7 @@ mod tests {
     fn test_format_date() {
         // Create a well-known test date/time.
         let dt = "2024-12-25T12:34:56.789Z[UTC]"
-            .parse::<jiff::Zoned>()
+            .parse::<jiff::ZonedDateTime>()
             .unwrap();
 
         assert_eq!(

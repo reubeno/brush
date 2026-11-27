@@ -81,7 +81,7 @@ uzers = "0.12.2"
 
 [target.wasm32-unknown-unknown.dependencies]
 getrandom = { version = "0.4.2", features = ["wasm_js"] }
-jiff = { version = "0.2.43", features = ["js"] }
+jiff = { version = "1.0.1", features = ["js"] }
 uuid = { version = "1", features = ["js"] }
 
 [dev-dependencies]
