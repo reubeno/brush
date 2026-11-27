@@ -4,8 +4,7 @@ use std::path::PathBuf;
 
 use crate::{Shell, ShellFd, extensions, results, sys};
 
-/// Unified error type for this crate. Contains just a kind for now,
-/// but will be extended later with additional context.
+/// Unified error type for this crate, with flags controlling how execution continues.
 #[derive(thiserror::Error, Debug)]
 #[error("{kind}")]
 pub struct Error {
@@ -16,6 +15,9 @@ pub struct Error {
     /// Whether or not the error should be considered a "fatal" error that would
     /// result in abnormal exit of a non-interactive shell.
     fatal: bool,
+
+    /// Whether the error ends a command substitution, including in an interactive shell.
+    fatal_in_command_substitution: bool,
 }
 
 /// Monolithic error type for the shell
@@ -406,6 +408,7 @@ where
         Self {
             kind: Box::new(convertible_to_kind.into()),
             fatal: false,
+            fatal_in_command_substitution: false,
         }
     }
 }
@@ -418,7 +421,13 @@ impl Error {
         self
     }
 
-    /// Returns whether or not this error is fatal.
+    /// Marks this error as fatal within a command substitution.
+    pub(crate) const fn into_fatal_in_command_substitution(mut self) -> Self {
+        self.fatal_in_command_substitution = true;
+        self
+    }
+
+    /// Returns whether the error is fatal in a non-interactive shell.
     pub const fn is_fatal(&self) -> bool {
         self.fatal
     }
@@ -442,12 +451,14 @@ impl Error {
     ///
     /// # Arguments
     ///
-    /// * `shell` - The shell instance, used to check interactive mode and script call stack.
+    /// * `shell` - The shell instance, used to check interactive mode and substitution context.
     pub(crate) fn to_control_flow(
         &self,
         shell: &Shell<impl extensions::ShellExtensions>,
     ) -> results::ExecutionControlFlow {
-        if self.is_fatal() && !shell.options().interactive {
+        if (self.is_fatal() && !shell.options().interactive)
+            || (self.fatal_in_command_substitution && shell.in_command_substitution)
+        {
             results::ExecutionControlFlow::ExitShell
         } else {
             results::ExecutionControlFlow::Normal

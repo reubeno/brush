@@ -45,6 +45,7 @@ mod state;
 mod traps;
 
 pub use builder::{CreateOptions, ShellBuilder, ShellBuilderState};
+pub(crate) use execution::ParseErrorPolicy;
 pub use initscripts::{ProfileLoadBehavior, RcLoadBehavior};
 pub use state::ShellState;
 
@@ -112,6 +113,10 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
 
     /// Clone depth from the original ancestor shell.
     depth: usize,
+
+    /// Whether this shell is executing a command substitution or one of its children.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub(crate) in_command_substitution: bool,
 
     /// The number the `\#` prompt escape shows: 1, plus one for each command the
     /// interactive loop has run.
@@ -206,6 +211,7 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
             key_bindings: self.key_bindings.clone(),
             history: self.history.clone(),
             depth: self.depth + 1,
+            in_command_substitution: self.in_command_substitution,
             command_number: self.command_number,
         }
     }

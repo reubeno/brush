@@ -47,18 +47,45 @@ cases:
       echo "After outer loop"
 
   - name: "Eval of code with syntax error"
-    known_failure: true # TODO(eval): a tokenizer error in eval'd code aborts the script instead of returning 2
     ignore_stderr: true
     stdin: |
       eval 'echo "a'
       echo "rc=$?"
 
   - name: "eval with a syntax error returns 2"
-    known_failure: true # TODO(eval): a syntax error in eval's input ends a brush script
     ignore_stderr: true
     stdin: |
       eval 'if'
       echo "after eval: $?"
+
+  - name: "Negated eval syntax error is recoverable in a command substitution"
+    ignore_stderr: true
+    stdin: |
+      value=$(
+        printf 'before\n'
+        ! eval '('
+        printf 'after negated eval: %s\n' "$?"
+      )
+      printf 'value=<%s> status=%s\n' "$value" "$?"
+
+  - name: "Eval syntax error exits in POSIX mode"
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      (eval '('; printf 'after eval\n')
+      printf 'eval: %s\n' "$?"
+      (builtin eval '('; printf 'after builtin eval\n')
+      printf 'builtin eval: %s\n' "$?"
+      (! eval '('; printf 'after negated eval\n')
+      printf 'negated eval: %s\n' "$?"
+
+  - name: "Command eval syntax error is recoverable in POSIX mode"
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      command eval '('
+      printf 'command eval: %s\n' "$?"
+      command eval 'eval "("; printf "nested eval: %s\n" "$?"'
 
   - name: "eval with an unset variable under set -u ends the shell"
     ignore_stderr: true

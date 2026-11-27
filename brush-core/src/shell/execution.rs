@@ -3,9 +3,15 @@
 use std::path::Path;
 
 use crate::{
-    ExecutionControlFlow, ExecutionParameters, ExecutionResult, ProcessGroupPolicy, SourceInfo,
-    arithmetic::Evaluatable as _, callstack, error, interp::Execute as _, openfiles,
+    ExecutionContext, ExecutionControlFlow, ExecutionParameters, ExecutionResult,
+    ProcessGroupPolicy, SourceInfo, arithmetic::Evaluatable as _, callstack, error,
+    interp::Execute as _, openfiles,
 };
+
+pub(crate) enum ParseErrorPolicy {
+    ShellInput,
+    SpecialBuiltin,
+}
 
 impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// Returns the default execution parameters for this shell.
@@ -60,6 +66,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             args,
             params,
             callstack::ScriptCallType::Source,
+            ParseErrorPolicy::ShellInput,
         )
         .await
     }
@@ -92,6 +99,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             args,
             Ok(program),
             params,
+            ParseErrorPolicy::ShellInput,
         )
         .await
     }
@@ -104,6 +112,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// * `args` - The arguments to pass to the script as positional parameters.
     /// * `params` - Execution parameters.
     /// * `call_type` - The type of script call being made.
+    /// * `parse_error_policy` - How syntax errors affect shell execution.
     async fn parse_and_execute_script_file<
         S: Into<String>,
         P: AsRef<Path>,
@@ -114,6 +123,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         args: I,
         params: &ExecutionParameters,
         call_type: callstack::ScriptCallType,
+        parse_error_policy: ParseErrorPolicy,
     ) -> Result<ExecutionResult, error::Error> {
         let path = path.as_ref();
         tracing::debug!("sourcing: {}", path.display());
@@ -136,8 +146,15 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         let source_info = crate::SourceInfo::from(path.to_owned());
         let parse_result = self.parse(opened_file);
 
-        self.run_in_script_frame(call_type, &source_info, args, parse_result, params)
-            .await
+        self.run_in_script_frame(
+            call_type,
+            &source_info,
+            args,
+            parse_result,
+            params,
+            parse_error_policy,
+        )
+        .await
     }
 
     /// Runs a script's program in a new call frame for the script, as every way of running
@@ -152,6 +169,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// * `args` - The arguments to pass to the script as positional parameters.
     /// * `parse_result` - The script's parsed program, or the error parsing it failed with.
     /// * `params` - Execution parameters.
+    /// * `parse_error_policy` - How syntax errors affect shell execution.
     async fn run_in_script_frame<
         S: Into<String>,
         I: Iterator<Item = S>,
@@ -163,10 +181,11 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         args: I,
         parse_result: Result<P, brush_parser::ParseError>,
         params: &ExecutionParameters,
+        parse_error_policy: ParseErrorPolicy,
     ) -> Result<ExecutionResult, error::Error> {
         let mut result = self
             .enter_script(call_type, source_info, args.map(Into::into))
-            .run_parsed_result(parse_result, source_info, params)
+            .run_parsed_result(parse_result, source_info, params, parse_error_policy)
             .await?;
 
         // A `return` that ended the script has been used up at the script's boundary. All
@@ -195,8 +214,13 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         let parse_result = self.parse_string(command);
-        self.run_parsed_result(parse_result, source_info, params)
-            .await
+        self.run_parsed_result(
+            parse_result,
+            source_info,
+            params,
+            ParseErrorPolicy::ShellInput,
+        )
+        .await
     }
 
     /// Executes the given command, provided to a shell executable on the command
@@ -253,6 +277,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
                 args,
                 &params,
                 callstack::ScriptCallType::Run,
+                ParseErrorPolicy::ShellInput,
             )
             .await?;
 
@@ -270,15 +295,23 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         parse_result: Result<P, brush_parser::ParseError>,
         source_info: &crate::SourceInfo,
         params: &ExecutionParameters,
+        parse_error_policy: ParseErrorPolicy,
     ) -> Result<ExecutionResult, error::Error> {
-        // If parsing succeeded, run the program. If there's a parse error, it's fatal (per spec).
         let result = match parse_result {
             Ok(prog) => prog.borrow().execute(self, params).await,
-            Err(parse_err) => Err(error::Error::from(error::ErrorKind::ParseError(
-                parse_err,
-                source_info.clone(),
-            ))
-            .into_fatal()),
+            Err(parse_err) => {
+                let error = error::Error::from(error::ErrorKind::ParseError(
+                    parse_err,
+                    source_info.clone(),
+                ));
+                let fatal = match parse_error_policy {
+                    ParseErrorPolicy::ShellInput => true,
+                    ParseErrorPolicy::SpecialBuiltin => {
+                        self.options.posix_mode && !params.suppress_posix_parse_exit
+                    }
+                };
+                Err(if fatal { error.into_fatal() } else { error })
+            }
         };
 
         // Report any errors.
@@ -315,5 +348,46 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         expr: &brush_parser::ast::ArithmeticExpr,
     ) -> Result<i64, error::Error> {
         Ok(expr.eval(self)?)
+    }
+}
+
+impl<SE: crate::extensions::ShellExtensions> ExecutionContext<'_, SE> {
+    /// Evaluate shell code under the syntax error policy for the `eval` builtin.
+    ///
+    /// A syntax error returns status 2. It exits a noninteractive POSIX shell
+    /// unless the code is being evaluated through the `command` builtin.
+    pub async fn eval(
+        &mut self,
+        command: impl Into<String>,
+    ) -> Result<ExecutionResult, error::Error> {
+        // TODO(source-info): Track the source location of eval's arguments.
+        let source_info = self.shell.call_stack().current_pos_as_source_info();
+        let parse_result = self.shell.parse_string(command);
+        self.shell
+            .run_parsed_result(
+                parse_result,
+                &source_info,
+                &self.params,
+                ParseErrorPolicy::SpecialBuiltin,
+            )
+            .await
+    }
+
+    /// Source a file with positional arguments under the syntax error policy for
+    /// the `.` and `source` builtins.
+    pub async fn source_script<S: Into<String>, P: AsRef<Path>, I: Iterator<Item = S>>(
+        &mut self,
+        path: P,
+        args: I,
+    ) -> Result<ExecutionResult, error::Error> {
+        self.shell
+            .parse_and_execute_script_file(
+                path.as_ref(),
+                args,
+                &self.params,
+                callstack::ScriptCallType::Source,
+                ParseErrorPolicy::SpecialBuiltin,
+            )
+            .await
     }
 }

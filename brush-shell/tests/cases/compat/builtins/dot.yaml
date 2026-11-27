@@ -115,6 +115,37 @@ cases:
       source script.sh
       echo "After source"
 
+  - name: "Source syntax error is recoverable in default mode"
+    ignore_stderr: true
+    test_files:
+      - path: "malformed.sh"
+        contents: |
+          (
+    stdin: |
+      source ./malformed.sh
+      printf 'source: %s\n' "$?"
+      value=$(
+        printf 'before\n'
+        ! . ./malformed.sh
+        printf 'after negated dot: %s\n' "$?"
+      )
+      printf 'value=<%s> status=%s\n' "$value" "$?"
+
+  - name: "Source syntax error honors POSIX builtin dispatch"
+    ignore_stderr: true
+    test_files:
+      - path: "malformed.sh"
+        contents: |
+          (
+    stdin: |
+      set -o posix
+      (source ./malformed.sh; printf 'after source\n')
+      printf 'source: %s\n' "$?"
+      (builtin . ./malformed.sh; printf 'after builtin dot\n')
+      printf 'builtin dot: %s\n' "$?"
+      command source ./malformed.sh
+      printf 'command source: %s\n' "$?"
+
   - name: "Source with break in caller's loop"
     test_files:
       - path: "script.sh"

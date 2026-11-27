@@ -720,7 +720,6 @@ cases:
       echo "next line"
 
   - name: "A syntax error in a sourced file fails the source and goes on"
-    known_failure: true # TODO(errors): the syntax error ends the shell
     ignore_stderr: true
     test_files:
       - path: "bad.sh"
