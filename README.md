@@ -1,7 +1,7 @@
 <div align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/extras/brand/brush-wordmark-white.svg">
-    <img src="docs/extras/brand/brush-wordmark-black.svg" alt="brush" width="380">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/reubeno/brush/737dd57e3fec83448a0358b7099b5ae305e9a853/docs/extras/brand/brush-wordmark-white.svg">
+    <img src="https://raw.githubusercontent.com/reubeno/brush/737dd57e3fec83448a0358b7099b5ae305e9a853/docs/extras/brand/brush-wordmark-black.svg" alt="brush" width="380">
   </picture>
 </div>
 
@@ -126,8 +126,8 @@ Upgrading an embedded crate? See the [crate API migration guides](docs/reference
 ## Community and contributing
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/extras/brand/mascot/turtle-dark.png">
-  <img src="docs/extras/brand/mascot/turtle-light.png" alt="" width="110" align="right" hspace="24" vspace="8">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/reubeno/brush/737dd57e3fec83448a0358b7099b5ae305e9a853/docs/extras/brand/mascot/turtle-dark.png">
+  <img src="https://raw.githubusercontent.com/reubeno/brush/737dd57e3fec83448a0358b7099b5ae305e9a853/docs/extras/brand/mascot/turtle-light.png" alt="" width="110" align="right" hspace="24" vspace="8">
 </picture>
 
 brush started as a curiosity-driven project, and that curiosity is still what drives it. Most contributors arrived the same way: tried brush, hit something unexpected, and helped fix it. However much time you have, there's a way in.
