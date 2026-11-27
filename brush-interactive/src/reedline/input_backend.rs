@@ -100,6 +100,7 @@ impl ReedlineInputBackend {
             .use_bracketed_paste(!options.disable_bracketed_paste)
             .with_completer(Box::new(completer))
             .with_quick_completions(true)
+            .with_partial_completions(true)
             .with_validator(Box::new(validator))
             .with_hinter(Box::new(hinter))
             .with_menu(reedline::ReedlineMenu::EngineCompleter(completion_menu))
