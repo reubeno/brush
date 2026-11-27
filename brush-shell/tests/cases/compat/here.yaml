@@ -726,7 +726,6 @@ cases:
       echo after
 
   - name: "Here doc delimited by end of input"
-    known_failure: true # TODO(tokenizer): bash warns and ends the body at the end of the input; brush rejects the script
     ignore_stderr: true
     stdin: |
       cat <<EOF

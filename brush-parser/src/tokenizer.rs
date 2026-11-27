@@ -389,6 +389,8 @@ pub(crate) const MAX_EXPANSION_NESTING: u32 = 32;
 
 /// A tokenizer for shell scripts.
 pub(crate) struct Tokenizer<'a, R: ?Sized + std::io::BufRead> {
+    pub(crate) complete_here_docs_at_eof: bool,
+    pub(crate) warnings: Vec<String>,
     char_reader: CharReader<utf8_chars::Chars<'a, R>>,
     /// Chars read ahead and put back, to be read again before any further input; see
     /// [`Tokenizer::read_here_doc_bodies_left_pending`].
@@ -776,6 +778,8 @@ fn expansion_body<'a>(
 impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
     pub fn new(reader: &'a mut R, options: &TokenizerOptions) -> Self {
         Tokenizer {
+            complete_here_docs_at_eof: false,
+            warnings: vec![],
             options: options.clone(),
             char_reader: CharReader::new(reader.chars()),
             unread: None,
@@ -1227,10 +1231,8 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                     // progress so it's recorded (and reported below); without one, the tag
                     // is missing.
                     if self.cross_state.frame.here_state.awaiting_tag() && state.started_token() {
-                        state.delimit_current_token(
-                            TokenEndReason::EndOfInput,
-                            &mut self.cross_state,
-                        )?;
+                        state
+                            .delimit_current_token(TokenEndReason::Other, &mut self.cross_state)?;
                     }
                     if self.cross_state.frame.here_state.awaiting_tag() {
                         return Err(TokenizerError::MissingHereTagAtEndOfInput);
@@ -1242,6 +1244,42 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                         && self.remove_here_end_tag(&mut state, &mut result, false)?
                     {
                         // If we hit end tag without a trailing newline, try to get next token.
+                        continue;
+                    }
+
+                    if self.complete_here_docs_at_eof {
+                        if matches!(
+                            self.cross_state.frame.here_state,
+                            HereState::NextLineIsHereDoc
+                        ) {
+                            state.delimit_current_token(
+                                TokenEndReason::UnescapedNewLine,
+                                &mut self.cross_state,
+                            )?;
+                            self.cross_state.frame.here_state = HereState::InHereDocs;
+                        }
+                        let tag = &self.cross_state.frame.current_here_tags[0];
+                        let line = self
+                            .cross_state
+                            .cursor
+                            .line
+                            .saturating_sub(usize::from(self.cross_state.cursor.column == 1));
+                        self.warnings.push(format!(
+                            "line {}: warning: here-document at line {} delimited by end-of-file (wanted `{}')",
+                            line.max(1), tag.position.line,
+                            unquote_str(&tag.tag).trim_end_matches('\n'),
+                        ));
+                        if state.started_token() && !state.current_token().ends_with('\n') {
+                            state.append_char('\n');
+                        }
+                        state.delimit_current_token(
+                            TokenEndReason::HereDocumentBodyEnd,
+                            &mut self.cross_state,
+                        )?;
+                        if let Some(next_tag) = self.cross_state.frame.current_here_tags.first_mut()
+                        {
+                            next_tag.position.line = line.max(1);
+                        }
                         continue;
                     }
 

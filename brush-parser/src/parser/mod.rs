@@ -142,6 +142,23 @@ impl<R: std::io::BufRead> Parser<R> {
 
     /// Parses the input into an abstract syntax tree (AST) of a shell program.
     pub fn parse_program(&mut self) -> Result<ast::Program, crate::error::ParseError> {
+        self.parse_program_impl(None)
+    }
+
+    /// Parses a complete input stream, accepting here-documents delimited by EOF.
+    /// Warnings are appended without a source name; callers should report them to stderr.
+    /// Use [`Self::parse_program`] instead when checking whether more input is needed.
+    pub fn parse_program_with_warnings(
+        &mut self,
+        warnings: &mut Vec<String>,
+    ) -> Result<ast::Program, crate::error::ParseError> {
+        self.parse_program_impl(Some(warnings))
+    }
+
+    fn parse_program_impl(
+        &mut self,
+        warnings: Option<&mut Vec<String>>,
+    ) -> Result<ast::Program, crate::error::ParseError> {
         //
         // References:
         //   * https://www.gnu.org/software/bash/manual/bash.html#Shell-Syntax
@@ -151,7 +168,7 @@ impl<R: std::io::BufRead> Parser<R> {
         //
         match self.options.parser_impl {
             ParserImpl::Peg => {
-                let tokens = self.tokenize()?;
+                let tokens = self.tokenize_with_warnings(warnings)?;
                 parse_tokens(&tokens, &self.options)
             }
             #[cfg(feature = "winnow-parser")]
@@ -187,14 +204,26 @@ impl<R: std::io::BufRead> Parser<R> {
     }
 
     fn tokenize(&mut self) -> Result<Vec<Token>, crate::error::ParseError> {
+        self.tokenize_with_warnings(None)
+    }
+
+    fn tokenize_with_warnings(
+        &mut self,
+        mut warnings: Option<&mut Vec<String>>,
+    ) -> Result<Vec<Token>, crate::error::ParseError> {
         // First we tokenize the input, according to the policy implied by provided options.
         let mut tokenizer = Tokenizer::new(&mut self.reader, &self.options.tokenizer_options());
+        tokenizer.complete_here_docs_at_eof = warnings.is_some();
 
         tracing::debug!(target: "tokenize", "Tokenizing...");
 
         let mut tokens = vec![];
         loop {
-            let result = match tokenizer.next_token() {
+            let next = tokenizer.next_token();
+            if let Some(warnings) = warnings.as_mut() {
+                warnings.append(&mut tokenizer.warnings);
+            }
+            let result = match next {
                 Ok(result) => result,
                 Err(e) => {
                     return Err(crate::error::ParseError::Tokenizing {

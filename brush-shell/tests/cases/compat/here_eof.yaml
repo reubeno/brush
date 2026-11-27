@@ -1,0 +1,55 @@
+name: "EOF-delimited here docs"
+cases:
+  - name: "EOF here doc script"
+    test_files:
+      - path: "script.sh"
+        contents: "cat <<EOF\nhello\n"
+    args: ["./script.sh"]
+
+  - name: "EOF here doc command string"
+    ignore_stderr: true # bash includes its executable name in -c diagnostics
+    args: ["-c", "cat <<EOF\nhello\n"]
+
+  - name: "EOF here doc eval"
+    ignore_stderr: true # eval diagnostic source names differ
+    stdin: |
+      eval 'cat <<EOF
+      hello
+      '
+      echo "rc=$?"
+
+  - name: "EOF here doc strips tabs"
+    test_files:
+      - path: "script.sh"
+        contents: "cat <<-EOF\n\thello\n\tworld\n"
+    args: ["./script.sh"]
+
+  - name: "EOF here doc without body"
+    test_files:
+      - path: "script.sh"
+        contents: "cat <<EOF\n"
+    args: ["./script.sh"]
+
+  - name: "EOF here doc without newline after tag"
+    test_files:
+      - path: "script.sh"
+        contents: "cat <<EOF"
+    args: ["./script.sh"]
+
+  - name: "EOF here doc preserves failing command status"
+    test_files:
+      - path: "script.sh"
+        contents: "sh -c 'cat; exit 7' <<EOF\nhello\n"
+    args: ["./script.sh"]
+
+  - name: "EOF here doc quoted tag and partial last line"
+    test_files:
+      - path: "script.sh"
+        contents: "cat <<'EOF'\n$HOME"
+    args: ["./script.sh"]
+
+  - name: "EOF here doc multiple pending bodies"
+    test_files:
+      - path: "script.sh"
+        contents: "cat <<A <<B\nhello\n"
+    args: ["./script.sh"]

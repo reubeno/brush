@@ -1,10 +1,25 @@
 //! Parsing for shell instances.
 
-use std::io::Read;
+use std::io::{Read, Write};
 
 use crate::{Shell, extensions, trace_categories};
 
 impl<SE: extensions::ShellExtensions> Shell<SE> {
+    pub(super) fn parse_for_execution<R: Read>(
+        &self,
+        reader: R,
+        source_info: &crate::SourceInfo,
+        params: &crate::ExecutionParameters,
+    ) -> Result<brush_parser::ast::Program, brush_parser::ParseError> {
+        let mut parser = create_parser(reader, &self.parser_options());
+        let mut warnings = vec![];
+        let result = parser.parse_program_with_warnings(&mut warnings);
+        for warning in warnings {
+            let _ = writeln!(params.stderr(self), "{}: {warning}", source_info.source);
+        }
+        result
+    }
+
     /// Parses the given reader as a shell program, returning the resulting Abstract Syntax Tree
     /// for the program.
     pub fn parse<R: Read>(
