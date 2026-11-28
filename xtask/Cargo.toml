@@ -32,6 +32,6 @@ winnow-args-markdown = "0.6.0"
 winnow-args-spec = "0.6.0"
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2.184"
+nix = { version = "0.32.0", default-features = false, features = ["user"] }
 # Used by the unix-only containerized e2e runner to read back each adapter's JUnit.
 junit-parser = "1.7.0"
