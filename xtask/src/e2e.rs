@@ -1038,10 +1038,9 @@ fn run_e2e_adapter(run: &E2eRun<'_>, app: &str) -> Result<Option<String>> {
 
     let mut results_mount = results.as_os_str().to_owned();
     results_mount.push(":/results");
-    // SAFETY: geteuid takes no arguments and has no preconditions.
-    let uid = unsafe { libc::geteuid() };
-    // SAFETY: getegid takes no arguments and has no preconditions.
-    let gid = unsafe { libc::getegid() };
+    // TODO: replace with <https://github.com/rust-lang/rust/issues/166252>
+    let uid = nix::unistd::geteuid().as_raw();
+    let gid = nix::unistd::getegid().as_raw();
     let container = format!("{image}-{}", std::process::id());
     let mut test = ProcessCommand::new(docker);
     test.args(["run", "--rm", "--name", &container, "--user"])

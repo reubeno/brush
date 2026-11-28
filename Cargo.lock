@@ -465,7 +465,6 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
- "uzers",
  "whoami",
 ]
 
@@ -5809,16 +5808,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "uzers"
-version = "0.12.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b8275fb1afee25b4111d2dc8b5c505dbbc4afd0b990cb96deb2d88bff8be18d"
-dependencies = [
- "libc",
- "log",
-]
-
-[[package]]
 name = "valuable"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6438,7 +6427,7 @@ dependencies = [
  "anyhow",
  "clap",
  "junit-parser",
- "libc",
+ "nix 0.32.0",
  "serde",
  "serde_json",
  "tempfile",
